@@ -34,11 +34,12 @@ if (!window.__rsAutofillInjected) {
       return
     }
     if (msg.type === 'CONTENT_FILL') {
-      const useV2 = discoverPageModel(document, location.href).adapterId === 'moka'
-      ;(useV2 ? fillMokaV2() : fillAll()).then(sendResponse).catch((e) => {
+      const adapterId = discoverPageModel(document, location.href).adapterId
+      const useV2 = adapterId === 'moka' || adapterId === 'dayee-wt'
+      ;(useV2 ? fillPlatformV2(adapterId) : fillAll()).then(sendResponse).catch((e) => {
         const message = (e as Error).message
         setStatus(`填写中断：${message}`)
-        sendResponse(failedSummary(message, useV2 ? 'Moka V2' : 'legacy'))
+        sendResponse(failedSummary(message, useV2 ? `${adapterId} V2` : 'legacy'))
       })
       return true
     }
@@ -89,14 +90,15 @@ async function requestPagePlan(model: ReturnType<typeof discoverPageModel>): Pro
   return response ?? { ok: false, plan: [], rejected: 0, messages: [], error: '规划后台连续两次未响应，请刷新页面后重试' }
 }
 
-async function fillMokaV2(): Promise<FillSummary> {
+async function fillPlatformV2(adapterId: 'moka' | 'dayee-wt'): Promise<FillSummary> {
   const stored = await getActiveProfile()
   if (!stored) throw new Error('还没有简历档案，请先在设置页创建')
   let model = discoverPageModel(document, location.href)
   const profile = projectProfileForPage(stored, model)
   const prepared = await prepareRepeatEntries(model, profile, document)
   model = prepared.model
-  setStatus(`Moka V2：全分区规划 ${model.sections.length} 个分区…`)
+  const platformName = adapterId === 'moka' ? 'Moka' : 'Dayee WT'
+  setStatus(`${platformName} V2：全分区规划 ${model.sections.length} 个分区…`)
   const planned = await requestPagePlan(model)
   if (!planned.ok) throw new Error(planned.error || '语义规划失败')
   // Background 使用存储档案规划；Moka 的论文→项目投影在本地补一轮规则候选执行。
@@ -138,10 +140,10 @@ async function fillMokaV2(): Promise<FillSummary> {
     unmatched: Math.max(0, fieldCount - planned.plan.length),
     manual: report.manual,
     items,
-    siteName: `Moka V2（已添加 ${prepared.added} 条；未保存/未提交）`,
+    siteName: `${platformName} V2（已添加 ${prepared.added} 条；未保存/未提交）`,
     at: Date.now(),
   }
-  setStatus(`Moka V2：已验证 ${summary.filled}，待确认 ${summary.review}，失败 ${summary.failed}；未保存/未提交`)
+  setStatus(`${platformName} V2：已验证 ${summary.filled}，待确认 ${summary.review}，失败 ${summary.failed}；未保存/未提交`)
   renderSummary(summary)
   return summary
 }

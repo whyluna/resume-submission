@@ -6,6 +6,7 @@ import type { SectionKey } from '@/shared/types'
 import { cssPath, hashSig, norm } from '@/shared/util'
 import { detectAdapter } from '../adapters/detect'
 import { MOKA, mokaAdapter } from '../adapters/moka'
+import { dayeeWtAdapter } from '../adapters/dayeeWt'
 
 const CONTROL_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
 const NAV_SELECTOR = 'nav, aside, [role="navigation"], [role="menu"], [role="tablist"], [class*="sidebar"], [class*="side-nav"], [class*="step"]'
@@ -138,6 +139,10 @@ function stateOf(controls: Element[]): ControlGroup['currentState'] {
   if (controls.some((el) => (el as HTMLInputElement).disabled)) return 'locked'
   const nonEmpty = controls.some((el) => {
     if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) return el.checked
+    if (el instanceof HTMLSelectElement) {
+      const selected = cleanText(el.selectedOptions[0]?.textContent || el.value)
+      return !!selected && !/^(请选择|请选|选择|select|--+)$/.test(selected.toLowerCase())
+    }
     if ((el as HTMLElement).isContentEditable) return !!cleanText(el.textContent)
     const value = (el as HTMLInputElement).value
     return typeof value === 'string' && value.trim() !== ''
@@ -465,7 +470,9 @@ export function discoverPageModel(doc: Document = document, url: string = locati
     title: doc.title,
     capturedAt: Date.now(),
     adapterId: adapter.id,
-    adapterMaturity: adapter.id === 'moka' ? mokaAdapter.maturity : 'research',
+    adapterMaturity: adapter.id === 'moka' ? mokaAdapter.maturity
+      : adapter.id === 'dayee-wt' ? dayeeWtAdapter.maturity
+        : 'research',
     sections,
     globalActions,
   }
