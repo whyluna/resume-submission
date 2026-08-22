@@ -40,7 +40,7 @@ function isVisible(el: Element): boolean {
 
 function makeRef(el: Element): ElementRefV2 {
   const path = cssPath(el)
-  const identity = [path, el.tagName, cleanText(el.getAttribute('class')), cleanText(el.getAttribute('role'))].join('|')
+  const identity = [path, el.tagName, cleanText(el.getAttribute('role'))].join('|')
   return { cssPath: path, index: 0, framePath: [], signature: hashSig(identity) }
 }
 
@@ -438,7 +438,7 @@ function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): F
     if (toggle) parts.push(part('current-toggle', toggle.identity, toggle.field.control.kind))
     const first = dateRecords[0]
     const control = makeGroup(kind, row, controls, parts, 'generic-semantic-date-group')
-    const idSource = [sectionTitle, first.field.signals.label, kind, control.id].join('|')
+    const idSource = [sectionTitle, kind, control.id].join('|')
     combined.push({
       field: { id: `field_${hashSig(idSource)}`, signals: first.field.signals, control },
       row,
@@ -479,7 +479,7 @@ function discoverFields(root: Element, sectionTitle: string, adapterId: AdapterI
     if (!detected || seen.has(detected.identity)) continue
     seen.add(detected.identity)
     const signals = signalsFor(detected.signalElement, sectionTitle)
-    const idSource = [sectionTitle, signals.label, signals.placeholder, detected.group.id].join('|')
+    const idSource = [sectionTitle, detected.group.id].join('|')
     records.push({
       field: { id: `field_${hashSig(idSource)}`, signals, control: detected.group },
       row: detected.signalElement.closest(FORM_ROW_SELECTOR),

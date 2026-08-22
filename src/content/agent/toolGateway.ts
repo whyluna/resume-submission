@@ -236,6 +236,10 @@ export class AgentToolGateway {
     }
 
     if (call.tool === 'select_option_from_fact' || call.tool === 'set_boolean_from_fact') {
+      const factObservation = this.observation.facts.find((candidate) => candidate.factId === call.args.factId)
+      if (call.tool === 'select_option_from_fact' && factObservation?.sensitivity === 'restricted') {
+        return failed(call, 'restricted 事实禁止进入选择控件', 'safety')
+      }
       const fact = this.factValue(call.args.factId)
       if (!fact.ok) return failed(call, '事实没有本地可用值', 'semantic')
       return this.executeAction(call, field, { kind: 'scalar', value: fact.value })

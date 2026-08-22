@@ -8,12 +8,13 @@ const TIMEOUT_MS = 150_000
 interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: string }
 
 /** OpenAI 兼容 chat completion（所有 LLM 调用唯一出口；API key 不离开 background） */
-export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {}): Promise<string> {
+export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxTokens?: number; temperature?: number; timeoutMs?: number; jsonMode?: boolean } = {}): Promise<string> {
   const base = settings.apiBaseUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/, '')
   const maxTokens = opts.maxTokens ?? 32000 // 推理模型会把大量 token 花在思考上，预算留足冗余
-  const doFetch = async (tokens: number) => {
+  const doFetch = async (tokens: number, jsonMode = opts.jsonMode === true) => {
     const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? TIMEOUT_MS)
+    const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
     try {
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
@@ -23,6 +24,7 @@ export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxT
           messages,
           temperature: opts.temperature ?? 0,
           max_tokens: tokens,
+          ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         }),
         signal: ctrl.signal,
       })
@@ -38,11 +40,17 @@ export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxT
         return { ok: false as const, status: 0, body: `模型返回空内容（finish_reason=${choice?.finish_reason ?? 'unknown'}，可尝试调大 max_tokens）` }
       }
       return { ok: true as const, content }
+    } catch (error) {
+      if (ctrl.signal.aborted) throw new Error(`模型请求超过 ${Math.round(timeoutMs / 1000)} 秒，已安全取消；页面未继续执行`)
+      throw error
     } finally {
       clearTimeout(timer)
     }
   }
   let r = await doFetch(maxTokens)
+  if (!r.ok && r.status === 400 && opts.jsonMode && /response_format|json_object|json mode/i.test(r.body)) {
+    r = await doFetch(maxTokens, false)
+  }
   // 个别 API 对 max_tokens 设上限，超限报 400 时自动降档重试一次
   if (!r.ok && r.status === 400 && /max_tokens/i.test(r.body) && maxTokens > 8192) {
     r = await doFetch(8192)
@@ -53,17 +61,48 @@ export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxT
 
 /** 从模型输出中抠出 JSON（容忍 markdown 围栏、前后说明文字、尾逗号） */
 export function parseJsonLoose<T>(raw: string): T {
-  let text = raw.trim()
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fence) text = fence[1].trim()
-  const first = Math.min(...[text.indexOf('{'), text.indexOf('[')].filter((i) => i >= 0))
-  const last = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'))
-  if (Number.isFinite(first) && last > first) text = text.slice(first, last + 1)
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    return JSON.parse(text.replace(/,\s*([}\]])/g, '$1')) as T // 去尾逗号重试
+  const sources = [...raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => match[1].trim())
+  sources.push(raw.trim())
+  let lastError: unknown = new Error('模型输出中没有 JSON')
+  const tryParse = (text: string): T | undefined => {
+    for (const candidate of [text, text.replace(/,\s*([}\]])/g, '$1')]) {
+      try { return JSON.parse(candidate) as T } catch (error) { lastError = error }
+    }
+    return undefined
   }
+  for (const source of sources) {
+    const direct = tryParse(source)
+    if (direct !== undefined) return direct
+    for (let start = 0; start < source.length; start++) {
+      const opener = source[start]
+      if (opener !== '{' && opener !== '[') continue
+      const stack: string[] = []
+      let quoted = false
+      let escaped = false
+      for (let index = start; index < source.length; index++) {
+        const char = source[index]
+        if (quoted) {
+          if (escaped) escaped = false
+          else if (char === '\\') escaped = true
+          else if (char === '"') quoted = false
+          continue
+        }
+        if (char === '"') { quoted = true; continue }
+        if (char === '{' || char === '[') stack.push(char)
+        else if (char === '}' || char === ']') {
+          const expected = char === '}' ? '{' : '['
+          if (stack.at(-1) !== expected) break
+          stack.pop()
+          if (stack.length === 0) {
+            const parsed = tryParse(source.slice(start, index + 1))
+            if (parsed !== undefined) return parsed
+            break
+          }
+        }
+      }
+    }
+  }
+  throw lastError
 }
 
 // ---------------- 任务A：简历文本 → 结构化档案 ----------------

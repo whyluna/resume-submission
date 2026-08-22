@@ -109,6 +109,16 @@ describe('V2 verified control executor', () => {
     expect((document.querySelector('#birth-month') as HTMLInputElement).value).toBe('2002-08')
   })
 
+  it('accepts a component readback that adds age text and exposes month precision', async () => {
+    document.body.innerHTML = '<input id="birth-display">'
+    const input = document.querySelector('#birth-display') as HTMLInputElement
+    input.addEventListener('change', () => { input.value = '2002-08 (24岁)' })
+    const birth = field('birth-display', 'date-single', '#birth-display', [['input', '#birth-display']])
+    const result = await executeControl({ field: birth, value: { kind: 'scalar', value: '2002-08-14' } })
+    expect(result.verified).toBe(true)
+    expect(input.value).toBe('2002-08 (24岁)')
+  })
+
   it('projects an __range plan from structured profile dates before execution', async () => {
     document.body.innerHTML = `
       <section id="education"><div id="range">

@@ -108,4 +108,18 @@ describe('agent tool gateway', () => {
     expect(batch.plan.rejected).toHaveLength(2)
     expect((document.querySelector('#name') as HTMLInputElement).value).toBe('')
   })
+
+  it('never allows a restricted identifier fact to drive a select control', async () => {
+    document.body.innerHTML = '<section id="basic"><select id="id-type"><option value="">请选择</option><option>身份证</option></select></section>'
+    const page = model([field('id-type', '证件号码', 'native-select', '#id-type', [['option-source', '#id-type']])])
+    const profile = createEmptyProfile('测试档案')
+    profile.basic.idNumber = '110101199901010019'
+    const gateway = new AgentToolGateway(page, profile, 'labels-only', document)
+    const batch = await gateway.executeCalls([{
+      callId: 'bad-id-select', tool: 'select_option_from_fact', reason: '模型误把号码当类型',
+      args: { fieldId: 'id-type', factId: factId(gateway, 'basic.idNumber'), match: 'normalized' },
+    }])
+    expect(batch.results[0]).toMatchObject({ status: 'failed', errorClass: 'safety' })
+    expect((document.querySelector('#id-type') as HTMLSelectElement).value).toBe('')
+  })
 })

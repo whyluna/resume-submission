@@ -27,6 +27,7 @@ describe('agent observation', () => {
     const serialized = JSON.stringify(observation)
     expect(observation.fields.some((field) => field.capabilities.includes('fill-date'))).toBe(true)
     expect(observation.facts.find((fact) => fact.path === 'basic.idNumber')).toMatchObject({ sensitivity: 'restricted', value: undefined })
+    expect(observation.facts.find((fact) => fact.path === 'basic.idType')).toMatchObject({ valueType: 'enum' })
     expect(serialized).not.toContain(profile.basic.idNumber)
     expect(serialized).not.toContain('cssPath')
     expect(serialized).not.toContain('token=secret')

@@ -38,6 +38,14 @@ function dateValueForElement(value: string, element: Element): { ok: boolean; va
   return { ok: true, value: canonical.value }
 }
 
+function dateReadbackMatches(actual: string, expected: string): boolean {
+  const actualDate = normalizeDateValue(actual)
+  const expectedDate = normalizeDateValue(expected)
+  if (!actualDate.valid || !expectedDate.valid || !actualDate.value || !expectedDate.value) return actual === expected
+  return actualDate.value === expectedDate.value
+    || (actualDate.value.length < expectedDate.value.length && expectedDate.value.startsWith(`${actualDate.value}-`))
+}
+
 function partElement(group: ControlGroup, role: ControlPartRole, doc: Document): Element | null {
   const part = group.parts.find((candidate) => candidate.role === role)
   return part ? resolveElement(part.ref, doc) : null
@@ -303,7 +311,11 @@ export async function executeControl(request: ControlExecutionRequest, doc: Docu
       return result(request.field.id, { state: 'manual', failureClass: 'validation', message: `${target.reason}，未写入页面` })
     }
     const write = writeText(input, target.value)
-    return write.written && write.actual === target.value
+    const verified = write.written && await waitFor(() => {
+      const actual = input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement ? input.value : (input as HTMLElement).textContent ?? ''
+      return dateReadbackMatches(actual, target.value)
+    }, 1500)
+    return verified
       ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期已写入并读回' })
       : result(request.field.id, { written: write.written, failureClass: 'control', message: '日期写入后读回不一致' })
   }
@@ -383,7 +395,7 @@ export function verifyControlValue(field: PageField, expected: ProjectedValue, d
   const projected = group.kind === 'date-single' ? dateValueForElement(value, target) : { ok: true, value }
   if (!projected.ok) return result(field.id, { state: 'manual', failureClass: 'validation', message: projected.reason ?? '日期精度不兼容' })
   const normalizedExpected = projected.value
-  const verified = actual === normalizedExpected
+  const verified = group.kind === 'date-single' ? dateReadbackMatches(actual, normalizedExpected) : actual === normalizedExpected
   return verified
     ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '字段值复验通过' })
     : result(field.id, { written: true, failureClass: 'control', message: '字段值复验不一致' })

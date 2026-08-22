@@ -17,7 +17,8 @@ function stringValue(value: unknown): string {
   return value == null ? '' : String(value).trim()
 }
 
-function valueType(value: unknown, key: string): ProfileFactSummary['valueType'] {
+function valueType(value: unknown, key: string, declared?: ProfileFactSummary['valueType']): ProfileFactSummary['valueType'] {
+  if (declared) return declared
   if (Array.isArray(value)) return 'list'
   if (typeof value === 'boolean') return 'boolean'
   if (/date|time/i.test(key)) return 'date'
@@ -28,14 +29,14 @@ function valueType(value: unknown, key: string): ProfileFactSummary['valueType']
 export function buildProfileFactSummaries(profile: Profile, privacyMode: PrivacyMode): ProfileFactSummary[] {
   const facts: ProfileFactSummary[] = []
   const store = profile as unknown as Record<string, unknown>
-  const push = (path: string, label: string, key: string, value: unknown) => {
+  const push = (path: string, label: string, key: string, value: unknown, declared?: ProfileFactSummary['valueType']) => {
     const text = stringValue(value)
     if (!text) return
     const masked = shouldMask(path)
     facts.push({
       path,
       label,
-      valueType: valueType(value, key),
+      valueType: valueType(value, key, declared),
       value: privacyMode === 'with-values' && !masked ? text : undefined,
       masked,
     })
@@ -48,7 +49,7 @@ export function buildProfileFactSummaries(profile: Profile, privacyMode: Privacy
       rows.forEach((row, index) => {
         const item = row as Record<string, unknown>
         if (item.enabled === false) return
-        for (const field of section.fields) push(`${section.key}[${index}].${field.k}`, field.label, field.k, item[field.k])
+        for (const field of section.fields) push(`${section.key}[${index}].${field.k}`, field.label, field.k, item[field.k], field.ctrl === 'select' ? 'enum' : undefined)
         if (item.endDateIsNow === true) push(`${section.key}[${index}].endDateIsNow`, '至今 / 进行中', 'endDateIsNow', true)
         if ('startDate' in item || 'endDate' in item || 'endDateIsNow' in item) {
           const start = stringValue(item.startDate)
@@ -65,7 +66,7 @@ export function buildProfileFactSummaries(profile: Profile, privacyMode: Privacy
     const object = store[section.key]
     if (!object || typeof object !== 'object') continue
     for (const field of section.fields) {
-      push(`${section.key}.${field.k}`, field.label, field.k, (object as Record<string, unknown>)[field.k])
+      push(`${section.key}.${field.k}`, field.label, field.k, (object as Record<string, unknown>)[field.k], field.ctrl === 'select' ? 'enum' : undefined)
     }
   }
 

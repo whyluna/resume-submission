@@ -172,6 +172,20 @@ describe('PageModel V2 discovery', () => {
     expect(education?.entries[0].fields).toHaveLength(1)
     expect(education?.entries[0].fields[0].control.kind).toBe('date-range-parts')
   })
+
+  it('keeps field and control IDs stable when a custom control gains selected text and state classes', () => {
+    document.body.innerHTML = `<section><h2>个人信息</h2><div class="semantic-row"><span class="semantic-label">性别</span>
+      <div class="select-wrapper"><input role="combobox" placeholder="请选择"></div>
+    </div></section>`
+    const before = discoverPageModel(document, 'https://example.com/resume').sections[0].fields[0]
+    const root = document.querySelector('.select-wrapper') as HTMLElement
+    root.classList.add('is-selected', 'is-open')
+    root.insertAdjacentHTML('beforeend', '<span class="selected-label">男</span>')
+    ;(root.querySelector('input') as HTMLInputElement).value = '男'
+    const after = discoverPageModel(document, 'https://example.com/resume').sections[0].fields[0]
+    expect(after.id).toBe(before.id)
+    expect(after.control.id).toBe(before.control.id)
+  })
 })
 
 describe('capture sanitization', () => {

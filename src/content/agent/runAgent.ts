@@ -104,7 +104,8 @@ export async function runAgent(
       .map((result) => [result.fieldId as string, result]))
     const manualCalls: AgentToolCall[] = remaining.map((id, index) => {
       const prior = failureByField.get(id)
-      const detail = prior?.evidence[0] || previousIssues[0] || '达到 Agent 修复轮次上限'
+      const fieldIssue = previousIssues.find((issue) => issue.includes(id))
+      const detail = prior?.evidence[0] || fieldIssue || '达到 Agent 修复轮次上限'
       return {
         callId: `local_manual_${index}`,
         tool: 'mark_manual',
