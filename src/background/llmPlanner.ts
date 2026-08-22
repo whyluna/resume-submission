@@ -12,6 +12,28 @@ export interface PageSemanticPlanResult extends ValidatedSemanticPlan {
   messages: string[]
 }
 
+function ruleFallback(batches: ReturnType<typeof buildSemanticPlannerBatches>): SemanticPlanItem[] {
+  return batches.flatMap((batch) => batch.fields.flatMap((field) => {
+    const candidate = field.ruleCandidates.find((item) => item.score >= 0.55
+      && batch.profileFacts.some((fact) => fact.path === item.profilePath))
+    return candidate ? [{
+      fieldId: field.fieldId,
+      decision: 'keep-rule' as const,
+      profilePaths: [candidate.profilePath],
+      transform: candidate.transform,
+      confidence: candidate.score,
+      reason: candidate.reason,
+    }] : []
+  }))
+}
+
+function auditBatch(batch: ReturnType<typeof buildSemanticPlannerBatches>[number], privacyMode: Settings['privacyMode']): void {
+  if (batch.profileFacts.some((fact) => fact.masked && fact.value !== undefined)) throw new Error('隐私审计失败：掩码事实包含值')
+  if (privacyMode === 'labels-only' && batch.profileFacts.some((fact) => fact.value !== undefined)) {
+    throw new Error('隐私审计失败：labels-only 包含值')
+  }
+}
+
 export async function planPageSemantics(
   model: PageModel,
   profile: Profile,
@@ -19,16 +41,18 @@ export async function planPageSemantics(
 ): Promise<PageSemanticPlanResult> {
   const candidates = generateRuleCandidateIndex(model)
   const batches = buildSemanticPlannerBatches(model, profile, settings.privacyMode, candidates)
+  const fallback = ruleFallback(batches)
   const accepted: SemanticPlanItem[] = []
   const rejected: ValidatedSemanticPlan['rejected'] = []
   const messages: string[] = []
 
   if (settings.privacyMode === 'off' || !settings.apiBaseUrl || !settings.apiKey || !settings.model) {
-    return { accepted, rejected, messages: ['LLM 规划未启用'] }
+    return { accepted: fallback, rejected, messages: [`LLM 规划未启用，使用规则候选 ${fallback.length} 项`] }
   }
 
   for (const batch of batches) {
     try {
+      auditBatch(batch, settings.privacyMode)
       const output = await chat(settings, [
         { role: 'system', content: SYSTEM_PROMPT },
         {
@@ -50,5 +74,7 @@ export async function planPageSemantics(
       messages.push(`${batch.sectionTitle}：LLM 规划失败，${(error as Error).message}`)
     }
   }
+  const decided = new Set(accepted.map((item) => item.fieldId))
+  accepted.push(...fallback.filter((item) => !decided.has(item.fieldId)))
   return { accepted, rejected, messages }
 }

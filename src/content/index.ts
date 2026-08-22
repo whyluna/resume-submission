@@ -1,5 +1,5 @@
 import type {
-  ExtMessage, FieldEl, FillResultItem, FillSummary, GroupEl, Profile, ScanRes, SectionKey,
+  ExtMessage, FieldEl, FillResultItem, FillSummary, GroupEl, Profile, ScanRes, SectionKey, SemanticPlannerResponse,
 } from '@/shared/types'
 import { norm } from '@/shared/util'
 import { detectSite } from '@/shared/siteDetect'
@@ -9,6 +9,8 @@ import { enabledItemCount, getProfileValue, matchFieldsInGroup, resolveOptionVal
 import { applyField, highlight } from './executor'
 import { renderSummary, setStatus } from './panel'
 import { llmReviewFields, type ReviewField } from './llmFallback'
+import { discoverPageModel } from './discover/pageModel'
+import { executeSemanticPlan } from './executorV2/executePlan'
 
 declare const window: Window & { __rsAutofillInjected?: boolean }
 if (!window.__rsAutofillInjected) {
@@ -34,7 +36,24 @@ if (!window.__rsAutofillInjected) {
       })
       return true
     }
+    if (msg.type === 'CONTENT_FILL_V2') {
+      fillAllV2().then(sendResponse).catch((e) => setStatus(`V2 填写中断：${(e as Error).message}`))
+      return true
+    }
   })
+}
+
+async function fillAllV2() {
+  const profile = await getActiveProfile()
+  if (!profile) throw new Error('还没有简历档案，请先在设置页创建')
+  setStatus('V2：正在构建页面模型并进行全分区规划…')
+  const model = discoverPageModel(document, location.href)
+  const planned = await chrome.runtime.sendMessage({ type: 'LLM_PLAN_PAGE', model } satisfies ExtMessage) as SemanticPlannerResponse
+  if (!planned.ok) throw new Error(planned.error || '语义规划失败')
+  setStatus(`V2：执行 ${planned.plan.length} 个计划项，只统计读回成功项…`)
+  const report = await executeSemanticPlan(model, profile, planned.plan, document)
+  setStatus(`V2：已验证 ${report.verified}，人工 ${report.manual}，失败 ${report.failed}；页面尚未保存/提交`)
+  return { ...report, plannerMessages: planned.messages, rejectedPlans: planned.rejected }
 }
 
 // ---------------- 填写编排 ----------------

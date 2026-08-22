@@ -45,7 +45,8 @@ describe('PageModel V2 discovery', () => {
     expect(education?.entries).toHaveLength(1)
     const fields = education?.entries[0].fields ?? []
     expect(fields.some((field) => field.signals.label === '学校名称')).toBe(true)
-    expect(fields.find((field) => field.control.kind === 'date-range-parts')?.control.parts).toHaveLength(4)
+    expect(fields.find((field) => field.control.kind === 'date-range-parts')?.control.parts).toHaveLength(5)
+    expect(fields.find((field) => field.control.kind === 'date-range-parts')?.control.parts.some((part) => part.role === 'current-toggle')).toBe(true)
     expect(education?.actions.some((action) => action.kind === 'add' && action.safety === 'automatic')).toBe(true)
     expect(model.globalActions.some((action) => action.kind === 'save' && action.safety === 'forbidden')).toBe(true)
   })

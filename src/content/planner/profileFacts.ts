@@ -50,6 +50,11 @@ export function buildProfileFactSummaries(profile: Profile, privacyMode: Privacy
         if (item.enabled === false) return
         for (const field of section.fields) push(`${section.key}[${index}].${field.k}`, field.label, field.k, item[field.k])
         if (item.endDateIsNow === true) push(`${section.key}[${index}].endDateIsNow`, '至今 / 进行中', 'endDateIsNow', true)
+        if ('startDate' in item || 'endDate' in item || 'endDateIsNow' in item) {
+          const start = stringValue(item.startDate)
+          const end = item.endDateIsNow === true ? '至今' : stringValue(item.endDate)
+          push(`${section.key}[${index}].__range`, '起止时间', '__range', [start, end].filter(Boolean).join(' ~ '))
+        }
       })
       continue
     }

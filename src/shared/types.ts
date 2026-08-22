@@ -3,6 +3,9 @@
  * 三方只通过这里的类型交互，改动需三端同步。
  */
 
+import type { PageModel } from './pageModel'
+import type { SemanticPlanItem } from './semanticPlan'
+
 // ---------------- Profile：简历档案 ----------------
 
 export interface Basic {
@@ -393,8 +396,10 @@ export type ExtMessage =
   | { type: 'LLM_TEST' } // options → bg：连通性测试
   | { type: 'LLM_EXTRACT'; text: string } // options → bg：简历文本 → 结构化档案
   | { type: 'LLM_MATCH'; fields: LlmMatchFieldIn[]; profileLines: string[] } // content → bg：字段映射兜底
+  | { type: 'LLM_PLAN_PAGE'; model: PageModel } // content → bg：V2 全分区语义规划
   | { type: 'CONTENT_SCAN' } // popup → content：仅扫描
   | { type: 'CONTENT_FILL' } // popup → content：扫描+匹配+填写
+  | { type: 'CONTENT_FILL_V2' } // 调试/灰度：V2 PageModel → planner → verified executor
   | { type: 'CONTENT_PANEL_TOGGLE'; visible: boolean }
 
 export interface GetStateRes {
@@ -413,4 +418,12 @@ export interface LlmTestRes {
   ok: boolean
   message: string
   latencyMs?: number
+}
+
+export interface SemanticPlannerResponse {
+  ok: boolean
+  plan: SemanticPlanItem[]
+  rejected: number
+  messages: string[]
+  error?: string
 }

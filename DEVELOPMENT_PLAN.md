@@ -230,11 +230,11 @@ src/
 
 ### 7.4 隐私
 
-- [ ] `labels-only` 不包含 Profile 值；
-- [ ] `with-values` 对 restricted/sensitive 值强制掩码；
-- [ ] 请求发送前进行最终 payload 审计；
+- [x] `labels-only` 不包含 Profile 值；
+- [x] `with-values` 对 restricted/sensitive 值强制掩码；
+- [x] 请求发送前进行最终 payload 审计；
 - [ ] 文档导入实现脱敏或显式授权；
-- [ ] 测试断言敏感值从未出现在 mock LLM 请求体。
+- [x] 测试断言敏感值从未出现在 mock LLM 请求体。
 
 ### 7.5 完成门槛
 
@@ -248,36 +248,36 @@ src/
 
 ### 8.1 文本与富文本
 
-- [ ] React/Vue/Angular 受控输入使用正确 setter 和事件；
+- [x] React/Vue/Angular 受控输入使用原生 setter 和 input/change/blur 事件；
 - [ ] 写入后等待框架渲染并重新定位；
-- [ ] maxlength 截断必须标记 review；
-- [ ] 富文本读取编辑器实际内容，不只读 textContent 前缀；
-- [ ] disabled 字段直接跳过。
+- [x] maxlength 截断必须标记 manual review；
+- [x] 富文本读取编辑器实际内容，不只读输入值前缀；
+- [x] disabled 字段直接跳过。
 
 ### 8.2 原生与镜像 select
 
-- [ ] 原生 select 按 value/text/同义词选择；
-- [ ] Bootstrap selectpicker 通过可见组件或底层 select + 框架刷新确认；
-- [ ] 自定义 select 读取已选项而不是输入框文本；
+- [x] 原生 select 按 value/text/同义词选择；
+- [x] Bootstrap selectpicker 同时校验底层值和存在时的可见镜像；
+- [x] 自定义 select 读取已选项而不是输入框文本；
 - [ ] 多选控件逐项验证。
 
 ### 8.3 搜索式 combobox
 
-- [ ] 建立 trigger 与 Portal 弹层关联；
+- [x] 建立 trigger 与 aria-controls/Portal 弹层关联；
 - [ ] 等待加载状态结束；
-- [ ] 只在关联弹层中搜索选项；
-- [ ] 点击后等待弹层关闭/选中项出现；
+- [x] 只在关联弹层中搜索选项；
+- [x] 点击后等待已选状态出现；
 - [ ] 区分必须选中与允许自由输入；
-- [ ] 失败时关闭弹层并报告，不留下多个弹层。
+- [x] 失败时发送 Escape 并报告，不把搜索文字计为选中。
 
 ### 8.4 日期
 
-- [ ] 单日、年月、日期区间；
-- [ ] 开始年/月 + 结束年/月；
+- [x] 单日、年月、日期区间；
+- [x] 开始年/月 + 结束年/月；
 - [ ] 单年/月；
 - [ ] 日历弹层；
-- [ ] “至今/在读”；
-- [ ] 每部分读回。
+- [x] “至今/在读”；
+- [x] 每部分读回。
 
 ### 8.5 重复条目
 
@@ -289,11 +289,11 @@ src/
 
 ### 8.6 执行报告
 
-- [ ] 分离 mapped/written/committed/verified；
-- [ ] 失败分类为 semantic/control/validation/stale-ref；
+- [x] 分离 mapped/written/committed/verified；
+- [x] 失败分类为 semantic/control/validation/stale-ref；
 - [ ] 报告未匹配字段具体标签和分区；
-- [ ] 报告不显示完整敏感值；
-- [ ] 页面明确显示“未保存、未提交”。
+- [x] V2 报告不携带 Profile 值；
+- [x] 页面状态明确显示“尚未保存/提交”。
 
 ### 8.7 完成门槛
 

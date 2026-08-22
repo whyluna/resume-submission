@@ -133,6 +133,7 @@ function part(role: ControlPartRole, el: Element): ControlPart {
 function stateOf(controls: Element[]): ControlGroup['currentState'] {
   if (controls.some((el) => (el as HTMLInputElement).disabled)) return 'locked'
   const nonEmpty = controls.some((el) => {
+    if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) return el.checked
     if ((el as HTMLElement).isContentEditable) return !!cleanText(el.textContent)
     const value = (el as HTMLInputElement).value
     return typeof value === 'string' && value.trim() !== ''
@@ -181,11 +182,16 @@ function detectControl(el: Element): DetectedControl | null {
   if (mokaParts) {
     const inputs = Array.from(mokaParts.querySelectorAll('input')).filter(isVisible)
     if (inputs.length >= 4) {
+      const row = mokaParts.parentElement
+      const current = row && Array.from(row.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+        .find((checkbox) => /至今|在读|在职|进行中/.test(cleanText(checkbox.closest('label')?.textContent)))
+      const controls = current ? [...inputs, current] : inputs
       return {
         identity: mokaParts,
-        group: makeGroup('date-range-parts', mokaParts, inputs, [
+        group: makeGroup('date-range-parts', mokaParts, controls, [
           part('start-year', inputs[0]), part('start-month', inputs[1]),
           part('end-year', inputs[2]), part('end-month', inputs[3]),
+          ...(current ? [part('current-toggle', current)] : []),
         ], 'moka-date-parts'),
         signalElement: inputs[0],
       }
@@ -202,10 +208,37 @@ function detectControl(el: Element): DetectedControl | null {
     }
   }
 
+  const customSelect = el.closest([
+    '.ant-select', '.el-select', '.arco-select', '.moka-select', '.select2-container',
+    '[class*="select-wrapper"]', '[class*="selectWrapper"]', '[role="combobox"]',
+  ].join(','))
+  if (customSelect && !(customSelect instanceof HTMLSelectElement)) {
+    const input = customSelect.querySelector('input') ?? el
+    const searchable = input.getAttribute('aria-autocomplete') === 'list'
+      || input.getAttribute('role') === 'combobox'
+      || input instanceof HTMLInputElement
+    return {
+      identity: customSelect,
+      group: makeGroup(searchable ? 'combobox' : 'custom-select', customSelect, [input], [
+        part('root', customSelect), part('trigger', customSelect), part('input', input),
+      ], 'portal-select'),
+      signalElement: input,
+    }
+  }
+
   if (el instanceof HTMLInputElement && el.classList.contains('dayType')) {
     return {
       identity: el,
       group: makeGroup('date-single', el, [el], [part('input', el)], 'dayee-dayType'),
+      signalElement: el,
+    }
+  }
+
+
+  if (el instanceof HTMLInputElement && ['date', 'month', 'week', 'datetime-local'].includes(el.type)) {
+    return {
+      identity: el,
+      group: makeGroup('date-single', el, [el], [part('input', el)], 'native-date'),
       signalElement: el,
     }
   }
@@ -233,6 +266,9 @@ function detectControl(el: Element): DetectedControl | null {
   }
 
   if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+    const labelText = cleanText(el.closest('label')?.textContent)
+    const owner = el.parentElement?.parentElement
+    if (/至今|在读|在职|进行中/.test(labelText) && owner?.querySelector('.moka-date-parts')) return null
     return {
       identity: el,
       group: makeGroup('checkbox', el, [el], [part('input', el)], 'checkbox-click'),

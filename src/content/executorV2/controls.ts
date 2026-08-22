@@ -1,0 +1,223 @@
+import type { ControlGroup, ControlPart, ControlPartRole } from '@/shared/pageModel'
+import type { ControlExecutionRequest, ControlExecutionResult } from './types'
+import { isSynonym, norm } from '@/shared/util'
+import { commitBlur, resolveElement, selectedText, setNativeValue, valueMatches, visible, waitFor } from './dom'
+
+function result(fieldId: string, patch: Partial<ControlExecutionResult>): ControlExecutionResult {
+  return {
+    fieldId,
+    state: 'failed',
+    mapped: true,
+    written: false,
+    committed: false,
+    verified: false,
+    message: '',
+    ...patch,
+  }
+}
+
+function scalarValue(request: ControlExecutionRequest): string | null {
+  return request.value.kind === 'scalar' ? request.value.value : null
+}
+
+function partElement(group: ControlGroup, role: ControlPartRole, doc: Document): Element | null {
+  const part = group.parts.find((candidate) => candidate.role === role)
+  return part ? resolveElement(part.ref, doc) : null
+}
+
+function writeText(el: Element, value: string): { written: boolean; actual: string; truncated: boolean } {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const maxLength = el.maxLength > 0 ? el.maxLength : Infinity
+    const next = value.slice(0, maxLength)
+    setNativeValue(el, next)
+    commitBlur(el)
+    return { written: true, actual: el.value, truncated: next !== value }
+  }
+  if ((el as HTMLElement).isContentEditable) {
+    el.textContent = value
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: value }))
+    commitBlur(el)
+    return { written: true, actual: el.textContent ?? '', truncated: false }
+  }
+  return { written: false, actual: '', truncated: false }
+}
+
+function chooseNativeSelect(select: HTMLSelectElement, value: string): boolean {
+  const option = Array.from(select.options).find((item) => {
+    const text = item.textContent?.trim() ?? ''
+    return norm(item.value) === norm(value) || norm(text) === norm(value) || isSynonym(text, value)
+  })
+  if (!option) return false
+  const optionText = option.textContent?.trim() ?? option.value
+  select.value = option.value
+  select.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+  commitBlur(select)
+  if (select.value !== option.value) return false
+  if (select.classList.contains('selectpicker')) {
+    const mirror = select.parentElement?.querySelector('.filter-option-inner-inner, .filter-option, button.dropdown-toggle')
+      ?? select.closest('.bootstrap-select')?.querySelector('.filter-option-inner-inner, .filter-option, button.dropdown-toggle')
+    if (mirror && !valueMatches(mirror.textContent ?? '', optionText)) return false
+  }
+  return true
+}
+
+function overlayFor(root: Element, doc: Document): Element | null {
+  const controlId = root.getAttribute('aria-controls') || root.querySelector('[aria-controls]')?.getAttribute('aria-controls')
+  if (controlId) {
+    const linked = doc.getElementById(controlId)
+    if (linked && visible(linked)) return linked
+  }
+  const candidates = Array.from(doc.querySelectorAll([
+    '[role="listbox"]', '.ant-select-dropdown', '.el-select-dropdown', '.arco-select-popup',
+    '.kuma-select2-dropdown', '.select2-dropdown', '[class*="dropdown-menu"]',
+  ].join(','))).filter(visible)
+  return candidates.at(-1) ?? null
+}
+
+function optionFor(overlay: Element, value: string): Element | null {
+  const options = Array.from(overlay.querySelectorAll('[role="option"], option, li, [class*="option"]')).filter(visible)
+  const exact = options.find((item) => norm(item.textContent ?? '') === norm(value))
+  return exact ?? options.find((item) => isSynonym(item.textContent ?? '', value))
+    ?? options.find((item) => valueMatches(item.textContent ?? '', value)) ?? null
+}
+
+async function chooseCustom(fieldId: string, group: ControlGroup, value: string, doc: Document): Promise<ControlExecutionResult> {
+  const root = resolveElement(group.root, doc)
+  if (!root) return result(fieldId, { failureClass: 'stale-ref', message: '自定义下拉引用已失效' })
+  const trigger = partElement(group, 'trigger', doc) ?? root
+  const input = partElement(group, 'input', doc) ?? root.querySelector('input')
+  ;(trigger as HTMLElement).click()
+  if (input instanceof HTMLInputElement) {
+    setNativeValue(input, value)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  }
+  const opened = await waitFor(() => !!overlayFor(root, doc), 1000)
+  const overlay = overlayFor(root, doc)
+  if (!opened || !overlay) {
+    return result(fieldId, { written: input instanceof HTMLInputElement, failureClass: 'control', message: '下拉弹层未打开，输入文字不计为选中' })
+  }
+  const optionReady = await waitFor(() => !!optionFor(overlay, value), 1500)
+  const option = optionFor(overlay, value)
+  if (!optionReady || !option) {
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    return result(fieldId, { written: input instanceof HTMLInputElement, failureClass: 'validation', message: '关联弹层中没有匹配选项' })
+  }
+  ;(option as HTMLElement).click()
+  const committed = await waitFor(() => valueMatches(selectedText(root), value), 1500)
+  return committed
+    ? result(fieldId, { state: 'verified', written: true, committed: true, verified: true, message: '下拉选项已选择并读回' })
+    : result(fieldId, { written: true, failureClass: 'control', message: '点击选项后未读到已选状态' })
+}
+
+function writeCheckbox(el: Element, checked: boolean): boolean {
+  if (!(el instanceof HTMLInputElement) || el.type !== 'checkbox') return false
+  if (el.checked !== checked) el.click()
+  return el.checked === checked
+}
+
+function chooseRadio(group: ControlGroup, value: string, doc: Document): boolean {
+  const radios = group.parts
+    .map((part) => resolveElement(part.ref, doc))
+    .filter((el): el is HTMLInputElement => el instanceof HTMLInputElement && el.type === 'radio')
+  const target = radios.find((radio) => {
+    const label = radio.id ? doc.querySelector(`label[for="${CSS.escape(radio.id)}"]`)?.textContent : radio.closest('label')?.textContent
+    return norm(radio.value) === norm(value) || norm(label ?? '') === norm(value) || isSynonym(label ?? '', value)
+  })
+  if (!target) return false
+  if (!target.checked) target.click()
+  return target.checked
+}
+
+function writeDatePart(part: ControlPart, value: string, doc: Document): boolean {
+  const el = resolveElement(part.ref, doc)
+  if (!el) return false
+  if (part.role === 'current-toggle') return writeCheckbox(el, value === '是')
+  if (el instanceof HTMLSelectElement) return chooseNativeSelect(el, value)
+  const written = writeText(el, value)
+  return written.written && written.actual === value
+}
+
+function readDatePart(part: ControlPart, expected: string, doc: Document): boolean {
+  const el = resolveElement(part.ref, doc)
+  if (!el) return false
+  if (part.role === 'current-toggle') return el instanceof HTMLInputElement && el.checked === (expected === '是')
+  if (el instanceof HTMLSelectElement) return valueMatches(el.value, expected) || valueMatches(el.selectedOptions[0]?.textContent ?? '', expected)
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value === expected
+  return false
+}
+
+async function executeDateParts(request: ControlExecutionRequest, doc: Document): Promise<ControlExecutionResult> {
+  if (request.value.kind !== 'parts') return result(request.field.id, { failureClass: 'semantic', message: '拆分日期缺少 parts 值' })
+  const projected = request.value
+  const group = request.field.control
+  const expectedParts = group.parts.filter((part) => part.role in projected.parts)
+  if (expectedParts.length === 0) return result(request.field.id, { failureClass: 'control', message: '页面日期控件没有可写部分' })
+  const written = expectedParts.every((part) => writeDatePart(part, projected.parts[part.role], doc))
+  if (!written) return result(request.field.id, { written: true, failureClass: 'control', message: '日期至少一个部分写入失败' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const verified = expectedParts.every((part) => readDatePart(part, projected.parts[part.role], doc))
+  return verified
+    ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期各部分均已读回' })
+    : result(request.field.id, { written: true, committed: true, failureClass: 'control', message: '日期部分读回不一致' })
+}
+
+function splitRangeValue(value: string): { start: string; end: string; current: boolean } {
+  const current = /至今|现在|在读|在职|进行中/.test(value)
+  const cleaned = value.replace(/至今|现在|在读|在职|进行中/g, '').trim()
+  const parts = cleaned.split(/\s*(?:~|～|到|至|—|–)\s*|\s+-\s+/, 2)
+  return { start: parts[0] ?? '', end: current ? '' : (parts[1] ?? ''), current }
+}
+
+async function executeDateRange(request: ControlExecutionRequest, value: string, doc: Document): Promise<ControlExecutionResult> {
+  const group = request.field.control
+  const range = splitRangeValue(value)
+  const expected: Partial<Record<ControlPartRole, string>> = { start: range.start, end: range.end, 'current-toggle': range.current ? '是' : '否' }
+  const parts = group.parts.filter((part) => part.role in expected)
+  if (parts.length < 2) return result(request.field.id, { failureClass: 'control', message: '日期区间缺少起止控件' })
+  const written = parts.every((part) => writeDatePart(part, expected[part.role] ?? '', doc))
+  const verified = written && parts.every((part) => readDatePart(part, expected[part.role] ?? '', doc))
+  return verified
+    ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期区间已逐项读回' })
+    : result(request.field.id, { written, committed: written, failureClass: 'control', message: '日期区间写入或读回失败' })
+}
+
+export async function executeControl(request: ControlExecutionRequest, doc: Document = document): Promise<ControlExecutionResult> {
+  if (request.value.kind === 'missing') return result(request.field.id, { state: 'manual', failureClass: 'semantic', message: request.value.reason })
+  const group = request.field.control
+  if (group.disabled || group.currentState === 'locked') {
+    return result(request.field.id, { state: 'manual', failureClass: 'control', message: '控件不可编辑' })
+  }
+  if (group.kind === 'date-range-parts') return executeDateParts(request, doc)
+  const value = scalarValue(request)
+  if (value === null) return result(request.field.id, { failureClass: 'semantic', message: '控件需要单值' })
+  const root = resolveElement(group.root, doc)
+  if (!root) return result(request.field.id, { failureClass: 'stale-ref', message: '控件引用已失效' })
+
+  if (group.kind === 'custom-select' || group.kind === 'combobox') return chooseCustom(request.field.id, group, value, doc)
+  if (group.kind === 'date-range') return executeDateRange(request, value, doc)
+  if (group.kind === 'radio-group') {
+    const verified = chooseRadio(group, value, doc)
+    return verified
+      ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '单选项已选择并读回' })
+      : result(request.field.id, { failureClass: 'validation', message: '没有匹配的单选项' })
+  }
+  if (group.kind === 'native-select' && root instanceof HTMLSelectElement) {
+    const selected = chooseNativeSelect(root, value)
+    return selected
+      ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '原生下拉已选择并读回' })
+      : result(request.field.id, { failureClass: 'validation', message: '原生下拉没有匹配选项' })
+  }
+  if (group.kind === 'checkbox') {
+    const checked = /^(是|true|1|yes)$/i.test(value)
+    const verified = writeCheckbox(root, checked)
+    return verified
+      ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '复选状态已读回' })
+      : result(request.field.id, { failureClass: 'control', message: '复选框写入失败' })
+  }
+  const write = writeText(root, value)
+  if (!write.written) return result(request.field.id, { failureClass: 'control', message: '控件不支持文本写入' })
+  if (write.truncated) return result(request.field.id, { state: 'manual', written: true, committed: true, failureClass: 'validation', message: '内容超过 maxlength，已截断并等待确认' })
+  return write.actual === value
+    ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '文本已写入并读回' })
+    : result(request.field.id, { written: true, failureClass: 'control', message: '文本写入后读回不一致' })
+}

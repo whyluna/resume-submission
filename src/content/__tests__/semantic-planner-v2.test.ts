@@ -45,8 +45,9 @@ describe('V2 rule candidates', () => {
     expect(schoolCandidates.some((candidate) => candidate.profilePath === 'educations[0].school')).toBe(true)
     expect(schoolCandidates.every((candidate) => candidate.score >= 0 && candidate.score <= 1)).toBe(true)
 
-    const current = education?.entries[0].fields.find((field) => field.control.kind === 'checkbox')
-    expect(current && candidates[current.id].some((candidate) => candidate.profilePath === 'educations[0].endDateIsNow')).toBe(true)
+    const range = education?.entries[0].fields.find((field) => field.control.kind === 'date-range-parts')
+    expect(range?.control.parts.some((part) => part.role === 'current-toggle')).toBe(true)
+    expect(range && candidates[range.id].some((candidate) => candidate.profilePath === 'educations[0].__range')).toBe(true)
   })
 })
 
