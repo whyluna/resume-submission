@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Moka 风格投递页（组件适配测试）</title>
+<style>
+  body { font: 14px/1.8 -apple-system, "PingFang SC", sans-serif; color: #1f2937; max-width: 760px; margin: 24px auto; background: #f5f6f8; padding: 0 16px }
+  .card { background: #fff; border-radius: 10px; padding: 18px 24px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06) }
+  h2 { font-size: 15px; margin: 0 0 12px; color: #374151 }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 28px }
+  .ant-form-item { display: flex; align-items: center; gap: 10px; min-width: 280px; margin: 0 }
+  .ant-form-item-label > label { width: 84px; text-align: right; color: #4b5563; font-size: 13px }
+  /* antd select */
+  .ant-select { min-width: 170px }
+  .ant-select-selector { display: flex; align-items: center; border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 11px; height: 30px; background: #fff; cursor: pointer }
+  .ant-select-selection-item { flex: 1; font-size: 13px; color: #1f2937 }
+  .ant-select-selection-placeholder { flex: 1; font-size: 13px; color: #bfbfbf }
+  .ant-select-arrow { color: #bfbfbf; font-size: 10px }
+  .ant-select-dropdown { position: absolute; z-index: 1050; background: #fff; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.08); padding: 4px; min-width: 170px }
+  .ant-select-item { padding: 5px 12px; font-size: 13px; border-radius: 4px; cursor: pointer }
+  .ant-select-item:hover { background: #f5f5f5 }
+  .ant-select-item-option-selected { color: #1677ff; font-weight: 600 }
+  /* element-plus select */
+  .el-select { min-width: 170px }
+  .el-select__wrapper { display: flex; align-items: center; border: 1px solid #dcdfe6; border-radius: 6px; height: 30px; padding: 0 10px; cursor: pointer }
+  .el-select__placeholder { font-size: 13px; color: #a8abb2 }
+  .el-select__selected-item { font-size: 13px; flex: 1 }
+  .el-select__caret { color: #a8abb2 }
+  .el-select__hide input { display: none }
+  .el-select-dropdown { position: absolute; z-index: 2050; background: #fff; border: 1px solid #e4e7ed; border-radius: 6px; padding: 6px 0; min-width: 170px; box-shadow: 0 6px 16px rgba(0,0,0,.08) }
+  .el-select-dropdown__item { padding: 0 14px; font-size: 13px; line-height: 30px; cursor: pointer }
+  .el-select-dropdown__item:hover { background: #f5f7fa }
+  /* antd cascader */
+  .ant-cascader { min-width: 220px }
+  .ant-cascader-input { border: 1px solid #d9d9d9; border-radius: 6px; height: 30px; padding: 0 11px; width: 200px; font-size: 13px }
+  .ant-cascader-menus { position: absolute; z-index: 1050; display: flex; gap: 4px; background: #fff; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.08); padding: 4px }
+  .ant-cascader-menu { min-width: 110px; list-style: none; margin: 0; padding: 4px }
+  .ant-cascader-menu-item { padding: 5px 10px; font-size: 13px; border-radius: 4px; cursor: pointer }
+  .ant-cascader-menu-item:hover { background: #f5f5f5 }
+  /* antd picker */
+  .ant-picker { display: inline-flex; align-items: center; border: 1px solid #d9d9d9; border-radius: 6px; height: 30px; padding: 0 11px; min-width: 160px; cursor: pointer }
+  .ant-picker-input input { border: none; outline: none; font-size: 13px; width: 130px }
+  /* quill rich text */
+  .ql-container { border: 1px solid #d9d9d9; border-radius: 6px; min-height: 90px }
+  .ql-editor { padding: 10px 12px; font-size: 13px; outline: none; min-height: 70px; background: #fff }
+  input[type=text].native { border: 1px solid #d9d9d9; border-radius: 6px; height: 30px; padding: 0 11px; font-size: 13px; min-width: 170px }
+  .note { color: #9ca3af; font-size: 12px }
+</style>
+</head>
+<body>
+<h1 style="font-size:18px">Moka 风格投递页 · 组件适配测试</h1>
+<p class="note">自定义下拉（antd/Element）、级联（省市）、日期组件（ant-picker）、富文本（Quill）。全部用原生 JS 模拟组件库 DOM 与浮层行为。</p>
+
+<div class="card">
+  <h2>基本信息</h2>
+  <div class="row">
+    <div class="ant-form-item"><div class="ant-form-item-label"><label>姓名</label></div><input type="text" class="native" id="mk_name"></div>
+    <div class="ant-form-item"><div class="ant-form-item-label"><label>手机号码</label></div><input type="text" class="native" id="mk_phone"></div>
+    <div class="ant-form-item">
+      <div class="ant-form-item-label"><label>籍贯</label></div>
+      <div class="ant-cascader" id="mk_native">
+        <input type="text" readonly class="ant-cascader-input" placeholder="请选择省 / 市">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>教育经历</h2>
+  <div class="row">
+    <div class="ant-form-item">
+      <div class="ant-form-item-label"><label>最高学历</label></div>
+      <div class="ant-select" id="mk_edu">
+        <div class="ant-select-selector" tabindex="0">
+          <span class="ant-select-selection-item" style="display:none"></span>
+          <span class="ant-select-selection-placeholder">请选择</span>
+          <span class="ant-select-arrow">▼</span>
+          <input type="text" readonly class="ant-select-selection-search-input" style="width:0;border:none">
+        </div>
+      </div>
+    </div>
+    <div class="ant-form-item">
+      <div class="ant-form-item-label"><label>学位</label></div>
+      <div class="el-select" id="mk_degree">
+        <div class="el-select__wrapper" tabindex="0">
+          <span class="el-select__selected-item" id="mk_degree_text"></span>
+          <span class="el-select__placeholder">请选择</span>
+          <span class="el-select__caret">▼</span>
+        </div>
+        <span class="el-select__hide"><input type="text" readonly></span>
+      </div>
+    </div>
+    <div class="ant-form-item">
+      <div class="ant-form-item-label"><label>入学时间</label></div>
+      <span class="ant-picker" id="mk_date">
+        <span class="ant-picker-input"><input type="text" readonly placeholder="YYYY-MM" id="mk_date_input"></span>
+        <span>📅</span>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>项目经历</h2>
+  <div class="ant-form-item" style="margin-bottom:10px">
+    <div class="ant-form-item-label"><label>项目描述</label></div>
+    <div class="ql-container" style="flex:1">
+      <div class="ql-editor" contenteditable="true" id="mk_proj_desc" data-gramm="false"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>自我评价</h2>
+  <textarea id="mk_self" style="width:100%;min-height:80px;border:1px solid #d9d9d9;border-radius:6px;padding:8px;font:inherit"></textarea>
+</div>
+
+<script>
+  // ---- antd select：浮层挂 body，点选回填 ----
+  const EDU_OPTIONS = ['博士研究生', '硕士研究生', '本科', '专科']
+  function setupAntSelect(id, options) {
+    const root = document.getElementById(id)
+    const selector = root.querySelector('.ant-select-selector')
+    let open = null
+    selector.addEventListener('click', () => {
+      if (open) { open.remove(); open = null; return }
+      open = document.createElement('div')
+      open.className = 'ant-select-dropdown'
+      const r = root.getBoundingClientRect()
+      open.style.left = r.left + 'px'; open.style.top = (r.bottom + 4 + window.scrollY) + 'px'
+      options.forEach((o) => {
+        const item = document.createElement('div')
+        item.className = 'ant-select-item ant-select-item-option'
+        item.textContent = o
+        item.addEventListener('click', () => {
+          root.querySelector('.ant-select-selection-placeholder').style.display = 'none'
+          const it = root.querySelector('.ant-select-selection-item')
+          it.style.display = ''; it.textContent = o
+          root.dataset.value = o
+          open.remove(); open = null
+        })
+        open.appendChild(item)
+      })
+      document.body.appendChild(open)
+    })
+  }
+  setupAntSelect('mk_edu', EDU_OPTIONS)
+
+  // ---- element-plus select ----
+  const DEGREE_OPTIONS = ['博士', '硕士', '学士', '无']
+  function setupElSelect(id, options) {
+    const root = document.getElementById(id)
+    const wrapper = root.querySelector('.el-select__wrapper')
+    let open = null
+    wrapper.addEventListener('click', () => {
+      if (open) { open.remove(); open = null; return }
+      open = document.createElement('div')
+      open.className = 'el-select-dropdown'
+      const r = root.getBoundingClientRect()
+      open.style.left = r.left + 'px'; open.style.top = (r.bottom + 4 + window.scrollY) + 'px'
+      options.forEach((o) => {
+        const item = document.createElement('li')
+        item.className = 'el-select-dropdown__item'
+        item.textContent = o
+        item.addEventListener('click', () => {
+          root.querySelector('.el-select__placeholder').style.display = 'none'
+          document.getElementById(id + '_text').textContent = o
+          root.dataset.value = o
+          open.remove(); open = null
+        })
+        open.appendChild(item)
+      })
+      document.body.appendChild(open)
+    })
+  }
+  setupElSelect('mk_degree', DEGREE_OPTIONS)
+
+  // ---- antd cascader：两级 省→市，逐级加载 ----
+  const PROVINCES = { '广东省': ['广州市', '深圳市', '珠海市'], '湖北省': ['武汉市', '宜昌市'], '浙江省': ['杭州市', '宁波市'] }
+  const cascader = document.getElementById('mk_native')
+  let cOpen = null
+  cascader.querySelector('input').addEventListener('click', () => {
+    if (cOpen) { cOpen.remove(); cOpen = null; return }
+    cOpen = document.createElement('div')
+    cOpen.className = 'ant-cascader-menus'
+    const r = cascader.getBoundingClientRect()
+    cOpen.style.left = r.left + 'px'; cOpen.style.top = (r.bottom + 4 + window.scrollY) + 'px'
+    const col = document.createElement('ul')
+    col.className = 'ant-cascader-menu'
+    Object.keys(PROVINCES).forEach((p) => {
+      const li = document.createElement('li')
+      li.className = 'ant-cascader-menu-item'
+      li.textContent = p
+      li.addEventListener('click', (e) => {
+        e.stopPropagation()
+        cOpen.querySelectorAll('.ant-cascader-menu').forEach((m, i) => { if (i > 0) m.remove() })
+        const cityCol = document.createElement('ul')
+        cityCol.className = 'ant-cascader-menu'
+        PROVINCES[p].forEach((c) => {
+          const cli = document.createElement('li')
+          cli.className = 'ant-cascader-menu-item'
+          cli.textContent = c
+          cli.addEventListener('click', (ev) => {
+            ev.stopPropagation()
+            cascader.querySelector('input').value = p + ' / ' + c
+            cascader.dataset.value = p + '/' + c
+            cOpen.remove(); cOpen = null
+          })
+          cityCol.appendChild(cli)
+        })
+        cOpen.appendChild(cityCol)
+      })
+      col.appendChild(li)
+    })
+    cOpen.appendChild(col)
+    document.body.appendChild(cOpen)
+  })
+
+  // ---- ant-picker：input 事件驱动回填（模拟 rc-picker 的 onChange）----
+  const dateInput = document.getElementById('mk_date_input')
+  dateInput.addEventListener('input', () => { document.getElementById('mk_date').dataset.value = dateInput.value })
+</script>
+</body>
+</html>

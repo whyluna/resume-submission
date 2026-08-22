@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>秋招简历自动填写 · 设置</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box }
+      body { font: 14px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2937; background: #f6f7fb }
+      header { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 32px; display: flex; align-items: center; gap: 10px }
+      header .logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(180deg, #4f46e5, #2563eb) }
+      header b { font-size: 16px }
+      nav { display: flex; gap: 4px; padding: 12px 32px 0 }
+      nav button { border: none; background: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 8px 8px 0 0; color: #6b7280 }
+      nav button.on { background: #fff; color: #4f46e5; font-weight: 600 }
+      main { background: #fff; margin: 0 32px 40px; padding: 24px 28px; border-radius: 0 12px 12px 12px; min-height: 70vh }
+      h2 { font-size: 15px; margin: 22px 0 10px; color: #374151 }
+      h2:first-child { margin-top: 0 }
+      .sect { border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 12px; background: #fff }
+      .sect-hd { display: flex; align-items: center; gap: 10px; padding: 12px 18px; cursor: pointer; user-select: none }
+      .sect-hd:hover { background: #f9fafb; border-radius: 12px }
+      .sect-hd b { flex: 1; font-size: 14px }
+      .sect-count { font-size: 12px; color: #9ca3af }
+      .sect-arrow { color: #9ca3af; width: 14px }
+      .sect-bd { padding: 4px 18px 16px; border-top: 1px dashed #f3f4f6 }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 14px }
+      .field { display: flex; flex-direction: column; gap: 3px }
+      .field.wide { grid-column: 1 / -1 }
+      .field label { font-size: 12px; color: #6b7280 }
+      .field input, .field select, .field textarea { padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit }
+      .field textarea { resize: vertical; min-height: 80px }
+      .sens { margin-left: 4px }
+      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px }
+      .card .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px }
+      .card .hd b { flex: 1; font-size: 13px }
+      .card .hd button { all: unset; cursor: pointer; color: #ef4444; font-size: 13px }
+      .btn { border: none; border-radius: 9px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; background: #4f46e5; color: #fff }
+      .btn:hover { background: #4338ca }
+      .btn.ghost { background: #fff; color: #4f46e5; border: 1px solid #c7d2fe; font-weight: 500 }
+      .btn.ghost.sm { padding: 6px 14px; font-size: 13px }
+      .btn.danger { background: #fee2e2; color: #b91c1c }
+      .toolbar { display: flex; gap: 10px; align-items: center; margin: 18px 0; flex-wrap: wrap }
+      .toast { position: fixed; top: 18px; right: 18px; background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.25) }
+      .note { color: #9ca3af; font-size: 12px }
+      .tips { background: #eef2ff; color: #4338ca; border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-bottom: 16px }
+      .tips.warn { background: #fffbeb; color: #b45309 }
+      .msg-ok { color: #15803d; font-size: 13px }
+      .msg-err { color: #b91c1c; font-size: 13px }
+      .import-step { margin-bottom: 26px }
+      .text-preview { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px;
+        font: 12px/1.8 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-all;
+        max-height: 260px; overflow: auto }
+      .review-cols { display: flex; gap: 18px; align-items: flex-start }
+      .review-left { flex: 0 0 36%; position: sticky; top: 12px }
+      .review-right { flex: 1; min-width: 0 }
+      @media (max-width: 960px) { .review-cols { flex-direction: column } .review-left { position: static; flex: none } }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

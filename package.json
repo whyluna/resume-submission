@@ -1,0 +1,29 @@
+{
+  "name": "resume-autofill",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "e2e": "npm run build && node e2e/serve-and-test.mjs"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.1",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.25",
+    "@types/chrome": "^0.0.270",
+    "@types/node": "^22.20.1",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "playwright": "^1.62.1",
+    "typescript": "~5.5.4",
+    "vite": "^5.4.8"
+  }
+}

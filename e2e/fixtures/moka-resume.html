@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>知乎 Moka 简历页（结构复刻）</title>
+<style>
+  * { box-sizing: border-box }
+  body { font: 14px/1.8 -apple-system, "PingFang SC", sans-serif; color: #1f2937; margin: 0; display: flex; background: #f3f4f6 }
+  /* 左侧导航：分区名带 section 字样 —— 回归：不能劫持表单分区检测 */
+  .sidebar { width: 180px; background: #fff; border-right: 1px solid #e5e7eb; padding: 20px 0; flex-shrink: 0 }
+  .sidebar-title { font-weight: 600; padding: 0 20px 12px; color: #9ca3af; font-size: 12px }
+  a.nav-section { display: block; padding: 8px 20px; color: #4b5563; text-decoration: none; border-left: 3px solid transparent; cursor: pointer }
+  a.nav-section.active { color: #0084ff; border-left-color: #0084ff; font-weight: 600 }
+  main { flex: 1; padding: 24px 32px; max-width: 860px }
+  .card { background: #fff; border-radius: 10px; padding: 18px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05) }
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px }
+  h2 { font-size: 15px; margin: 0; color: #374151 }
+  .btn { border: 1px solid #0084ff; color: #0084ff; background: #fff; border-radius: 6px; padding: 3px 12px; cursor: pointer; font-size: 13px }
+  .item-card { border: 1px dashed #e5e7eb; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px }
+  .form-item { display: flex; align-items: center; gap: 12px; margin-bottom: 10px }
+  .form-label { width: 90px; text-align: right; color: #4b5563; font-size: 13px; flex-shrink: 0 }
+  .form-label::before { content: none }
+  input[type=text].plain, textarea.plain { border: 1px solid #d1d5db; border-radius: 6px; height: 32px; padding: 0 10px; font: inherit; flex: 1; max-width: 320px }
+  textarea.plain { height: 74px; padding: 6px 10px; max-width: 560px }
+  /* 搜索式下拉（学校/专业）：普通 input + 联想浮层 */
+  .search-box { position: relative; flex: 1; max-width: 320px }
+  .search-box input { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; height: 32px; padding: 0 28px 0 10px; font: inherit }
+  .search-box .icon { position: absolute; right: 8px; top: 8px; color: #9ca3af; font-size: 12px }
+  .moka-search-dropdown { position: absolute; left: 0; top: 36px; z-index: 1200; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.1); list-style: none; margin: 0; padding: 4px; min-width: 100%; max-height: 240px; overflow: auto }
+  .moka-option-item { padding: 6px 12px; font-size: 13px; border-radius: 4px; cursor: pointer }
+  .moka-option-item:hover { background: #f3f4f6 }
+  .moka-option-empty { padding: 6px 12px; font-size: 12px; color: #9ca3af }
+  .moka-option-empty a { color: #0084ff; cursor: pointer }
+  /* antd select（学历：远程搜索式；语种：普通） */
+  .ant-select { position: relative; width: 220px; flex-shrink: 0 }
+  .ant-select-selector { display: flex; align-items: center; border: 1px solid #d1d5db; border-radius: 6px; height: 32px; padding: 0 10px; background: #fff; cursor: pointer }
+  .ant-select-selection-item { flex: 1; font-size: 13px; display: none }
+  .ant-select-selection-placeholder { flex: 1; font-size: 13px; color: #9ca3af }
+  .ant-select-arrow { color: #9ca3af; font-size: 10px }
+  .ant-select-selection-search-input { border: none; outline: none; flex: 1; font: inherit; font-size: 13px; padding: 0 }
+  .ant-select-dropdown { position: absolute; z-index: 1300; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.1); padding: 4px; min-width: 200px }
+  .ant-select-item { padding: 5px 12px; font-size: 13px; border-radius: 4px; cursor: pointer }
+  .ant-select-item-option:hover { background: #f3f4f6 }
+  .ant-select-item-empty { color: #9ca3af; cursor: default }
+  /* ant-picker 区间/单值日期 */
+  .ant-picker { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d1d5db; border-radius: 6px; height: 32px; padding: 0 10px; background: #fff }
+  .ant-picker input { border: none; outline: none; font: inherit; font-size: 13px; width: 84px; text-align: center }
+  .ant-picker-separator { color: #9ca3af }
+  .now-check { display: inline-flex; align-items: center; gap: 4px; color: #4b5563; font-size: 13px; margin-left: 8px }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-title">我的简历</div>
+  <a class="nav-section">个人信息</a>
+  <a class="nav-section">求职意向</a>
+  <a class="nav-section">工作经历</a>
+  <a class="nav-section active">教育背景</a>
+  <a class="nav-section">实习经历</a>
+  <a class="nav-section">项目经验</a>
+  <a class="nav-section">语言能力</a>
+  <a class="nav-section">自我描述</a>
+  <a class="nav-section">获奖经历</a>
+</aside>
+<main>
+  <section class="card" id="sec_basic">
+    <div class="section-head"><h2>个人信息</h2></div>
+    <div class="form-item"><div class="form-label">姓名</div><input type="text" class="plain" id="mr_name"></div>
+    <div class="form-item"><div class="form-label">手机号码</div><input type="text" class="plain" id="mr_phone"></div>
+    <div class="form-item"><div class="form-label">电子邮箱</div><input type="text" class="plain" id="mr_email"></div>
+    <div class="form-item"><div class="form-label">成长故乡</div><input type="text" class="plain" id="mr_growth" placeholder="请填写您的成长故乡"></div>
+  </section>
+
+  <section class="card" id="sec_intent">
+    <div class="section-head"><h2>求职意向</h2></div>
+    <div class="form-item"><div class="form-label">期望城市</div><input type="text" class="plain" id="mr_city"></div>
+    <div class="form-item"><div class="form-label">期望职位</div><input type="text" class="plain" id="mr_pos"></div>
+  </section>
+
+  <section class="card" id="sec_edu">
+    <div class="section-head"><h2>教育背景</h2><button class="btn" data-add="edu">+ 添加</button></div>
+    <div id="edu_list"></div>
+    <template id="tpl_edu">
+      <div class="item-card edu-card">
+        <div class="form-item"><div class="form-label">学校</div>
+          <div class="search-box"><input type="text" class="edu_school" placeholder="输入学校名称搜索" autocomplete="off"><span class="icon">🔍</span></div>
+        </div>
+        <div class="form-item"><div class="form-label">专业</div>
+          <div class="search-box"><input type="text" class="edu_major" placeholder="输入专业名称搜索" autocomplete="off"><span class="icon">🔍</span></div>
+        </div>
+        <div class="form-item"><div class="form-label">学历</div>
+          <div class="ant-select edu_edu">
+            <div class="ant-select-selector">
+              <span class="ant-select-selection-item"></span>
+              <span class="ant-select-selection-placeholder">请选择</span>
+              <input type="text" class="ant-select-selection-search-input" placeholder="请输入学历搜索">
+              <span class="ant-select-arrow">▼</span>
+            </div>
+          </div>
+        </div>
+        <div class="form-item"><div class="form-label">就读时间</div>
+          <span class="ant-picker edu_range">
+            <input type="text" readonly class="edu_start" placeholder="开始时间"><span class="ant-picker-separator">~</span><input type="text" readonly class="edu_end" placeholder="结束时间">
+          </span>
+          <label class="now-check"><input type="checkbox" class="edu_now">至今</label>
+        </div>
+      </div>
+    </template>
+  </section>
+
+  <section class="card" id="sec_proj">
+    <div class="section-head"><h2>项目经验</h2><button class="btn" data-add="proj">+ 添加</button></div>
+    <div id="proj_list"></div>
+    <template id="tpl_proj">
+      <div class="item-card proj-card">
+        <div class="form-item"><div class="form-label">项目名称</div><input type="text" class="plain pj_name"></div>
+        <div class="form-item"><div class="form-label">职责</div><input type="text" class="plain pj_duty"></div>
+        <div class="form-item"><div class="form-label">项目描述</div><textarea class="plain pj_desc"></textarea></div>
+        <div class="form-item"><div class="form-label">起止时间</div>
+          <span class="ant-picker proj_range">
+            <input type="text" readonly class="pj_start" placeholder="开始时间"><span class="ant-picker-separator">~</span><input type="text" readonly class="pj_end" placeholder="结束时间">
+          </span>
+        </div>
+      </div>
+    </template>
+  </section>
+
+  <section class="card" id="sec_award">
+    <div class="section-head"><h2>获奖经历</h2><button class="btn" data-add="award">+ 添加</button></div>
+    <div id="award_list"></div>
+    <template id="tpl_award">
+      <div class="item-card award-card">
+        <div class="form-item"><div class="form-label">获奖时间</div>
+          <span class="ant-picker award_date"><input type="text" readonly class="aw_date" placeholder="获奖年月"></span>
+        </div>
+        <div class="form-item"><div class="form-label">奖项名称</div><input type="text" class="plain aw_name" placeholder="奖项名称"></div>
+      </div>
+    </template>
+  </section>
+
+  <section class="card" id="sec_lang">
+    <div class="section-head"><h2>语言能力</h2></div>
+    <div class="form-item"><div class="form-label">语种</div>
+      <div class="ant-select lang_lang">
+        <div class="ant-select-selector">
+          <span class="ant-select-selection-item"></span>
+          <span class="ant-select-selection-placeholder">请选择</span>
+          <input type="text" readonly class="ant-select-selection-search-input" style="width:0;border:none">
+          <span class="ant-select-arrow">▼</span>
+        </div>
+      </div>
+    </div>
+    <div class="form-item"><div class="form-label">证书名称</div><input type="text" class="plain" id="mr_cert"></div>
+  </section>
+
+  <section class="card" id="sec_self">
+    <div class="section-head"><h2>自我描述</h2></div>
+    <div class="form-item"><div class="form-label">自我描述</div><textarea class="plain" id="mr_self" style="max-width:640px"></textarea></div>
+  </section>
+</main>
+
+<script>
+  // ---- 搜索式下拉（学校/专业）：输入过滤 → 联想列表 → 点选回填 ----
+  const SCHOOLS = ['示例理工大学', '示例大学', '华中科技大学', '北京示例大学', '上海示例交通大学', '浙江示例大学']
+  const MAJORS = ['计算机科学与技术', '软件工程', '人工智能', '电子信息工程', '信息安全', '数据科学与大数据技术']
+  function setupSearch(box, db) {
+    const input = box.querySelector('input')
+    let dd = null
+    const close = () => { dd?.remove(); dd = null }
+    input.addEventListener('input', () => {
+      close()
+      input.dataset.value = ''
+      const q = input.value.trim()
+      dd = document.createElement('ul')
+      dd.className = 'moka-search-dropdown'
+      const hits = q ? db.filter((s) => s.includes(q)) : []
+      if (hits.length === 0) {
+        const li = document.createElement('li')
+        li.className = 'moka-option-empty'
+        li.innerHTML = '没有找到？<a>添加全称</a>'
+        dd.appendChild(li)
+      } else {
+        hits.slice(0, 8).forEach((s) => {
+          const li = document.createElement('li')
+          li.className = 'moka-option-item'
+          li.setAttribute('role', 'option')
+          li.textContent = s
+          li.addEventListener('click', () => {
+            input.value = s
+            input.dataset.value = s
+            close()
+          })
+          dd.appendChild(li)
+        })
+      }
+      box.appendChild(dd)
+    })
+    input.addEventListener('blur', () => setTimeout(close, 150))
+  }
+
+  // ---- antd select：学历=远程搜索（点开仅提示，输入后出选项）；语种=普通点开全量 ----
+  const EDU_LEVELS = ['博士研究生', '硕士研究生', '本科', '专科']
+  function setupAntSelect(root, options, remote) {
+    const selector = root.querySelector('.ant-select-selector')
+    const input = root.querySelector('.ant-select-selection-search-input')
+    let dd = null
+    const close = () => { dd?.remove(); dd = null }
+    const open = (list) => {
+      close()
+      dd = document.createElement('div')
+      dd.className = 'ant-select-dropdown'
+      dd.style.position = 'fixed'
+      dd.style.left = root.getBoundingClientRect().left + 'px'
+      dd.style.top = (root.getBoundingClientRect().bottom + 4) + 'px'
+      if (list.length === 0) {
+        const it = document.createElement('div')
+        it.className = 'ant-select-item ant-select-item-empty'
+        it.textContent = remote ? '请输入关键字搜索' : '暂无数据'
+        dd.appendChild(it)
+      } else {
+        list.forEach((o) => {
+          const it = document.createElement('div')
+          it.className = 'ant-select-item ant-select-item-option'
+          it.textContent = o
+          it.addEventListener('click', () => {
+            root.querySelector('.ant-select-selection-placeholder').style.display = 'none'
+            const sel = root.querySelector('.ant-select-selection-item')
+            sel.style.display = ''; sel.textContent = o
+            root.dataset.value = o
+            close()
+          })
+          dd.appendChild(it)
+        })
+      }
+      document.body.appendChild(dd)
+    }
+    selector.addEventListener('click', () => {
+      if (dd) { close(); return }
+      const q = input.value.trim()
+      open(remote && q ? options.filter((o) => o.includes(q)) : (remote ? [] : options))
+    })
+    input.addEventListener('input', () => {
+      const q = input.value.trim()
+      open(remote && q ? options.filter((o) => o.includes(q)) : (remote ? [] : options))
+    })
+  }
+
+  // ---- 条目卡片：模板克隆 + 组件绑定；默认各放一张空卡（复刻真实页）----
+  const LISTS = { edu: 'edu_list', proj: 'proj_list', award: 'award_list' }
+  function bindComponents(scope) {
+    scope.querySelectorAll('.search-box:not([data-bound])').forEach((box) => {
+      box.dataset.bound = '1'
+      setupSearch(box, box.querySelector('.edu_school') ? SCHOOLS : MAJORS)
+    })
+    scope.querySelectorAll('.edu_edu:not([data-bound])').forEach((el) => {
+      el.dataset.bound = '1'
+      setupAntSelect(el, EDU_LEVELS, true)
+    })
+    scope.querySelectorAll('.lang_lang:not([data-bound])').forEach((el) => {
+      el.dataset.bound = '1'
+      setupAntSelect(el, ['英语', '日语', '俄语', '其他'], false)
+    })
+  }
+  function addCard(kind) {
+    const tpl = document.getElementById('tpl_' + kind)
+    const host = document.getElementById(LISTS[kind])
+    host.appendChild(tpl.content.cloneNode(true))
+    bindComponents(host)
+  }
+  document.querySelectorAll('[data-add]').forEach((btn) => {
+    btn.addEventListener('click', () => addCard(btn.dataset.add))
+  })
+  addCard('edu'); addCard('proj'); addCard('award')
+  bindComponents(document)
+
+  // ---- ant-picker：input 事件驱动（模拟 rc-picker onChange），区间含至今复选 ----
+  document.addEventListener('input', (e) => {
+    const t = e.target
+    if (!(t instanceof Element)) return
+    if (t.classList.contains('edu_start') || t.classList.contains('pj_start')) { t.closest('.ant-picker').dataset.start = t.value }
+    if (t.classList.contains('edu_end') || t.classList.contains('pj_end')) { t.closest('.ant-picker').dataset.end = t.value }
+    if (t.classList.contains('aw_date')) { t.closest('.ant-picker').dataset.value = t.value }
+  }, true)
+  document.addEventListener('change', (e) => {
+    const t = e.target
+    if (!(t instanceof Element) || !t.classList.contains('edu_now')) return
+    const card = t.closest('.edu-card')
+    const end = card.querySelector('.edu_end')
+    end.disabled = t.checked
+    end.value = t.checked ? '至今' : ''
+    if (!t.checked) card.querySelector('.edu_range').dataset.end = ''
+  }, true)
+</script>
+</body>
+</html>
