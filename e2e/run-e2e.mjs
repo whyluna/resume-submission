@@ -151,6 +151,7 @@ try {
   for (const g of scan.groups) console.log(`  · [${g.sectionKey}] ${g.sectionHint || g.sectionKey}（${g.fieldCount} 字段${g.hasAddButton ? '，含添加按钮' : ''}）`)
   ok('扫描识别基本信息分区', scan.groups.some((g) => g.sectionKey === 'basic'))
   ok('扫描识别教育经历分区', scan.groups.some((g) => g.sectionKey === 'educations'))
+  ok('V2 扫描返回可填写字段', (scan.v2?.totalFields ?? 0) > 0, `${scan.v2?.totalFields ?? 0} 字段`)
 
   const summary = await sendToFixture('CONTENT_FILL')
   console.log(`填写结果：✅已填 ${summary.filled}  🟠待确认 ${summary.review}  ❌失败 ${summary.failed}  未匹配 ${summary.unmatched}  需手动 ${summary.manual}`)
@@ -343,6 +344,8 @@ try {
   ok('侧边导航未劫持分区（≥6 个分区）', zhScan.groups.length >= 6, `${zhScan.groups.length} 个`)
   ok('识别「自我描述」分区', zhScan.groups.some((g) => g.sectionKey === 'selfEvaluation'))
   ok('识别「项目经验」分区', zhScan.groups.some((g) => g.sectionKey === 'projects'))
+  ok('知乎 V2 扫描不是空模型', zhScan.v2?.adapterId === 'moka' && (zhScan.v2?.totalFields ?? 0) > 0,
+    `${zhScan.v2?.adapterId ?? 'none'} / ${zhScan.v2?.totalFields ?? 0} 字段`)
 
   const zhSummary = await sendToFixture('CONTENT_FILL', ZHIHU)
   console.log(`知乎页填写：✅${zhSummary.filled}  🟠${zhSummary.review}  ❌${zhSummary.failed}`)

@@ -8,12 +8,12 @@ const TIMEOUT_MS = 150_000
 interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: string }
 
 /** OpenAI 兼容 chat completion（所有 LLM 调用唯一出口；API key 不离开 background） */
-export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxTokens?: number; temperature?: number } = {}): Promise<string> {
+export async function chat(settings: Settings, messages: ChatMsg[], opts: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {}): Promise<string> {
   const base = settings.apiBaseUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/, '')
   const maxTokens = opts.maxTokens ?? 32000 // 推理模型会把大量 token 花在思考上，预算留足冗余
   const doFetch = async (tokens: number) => {
     const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? TIMEOUT_MS)
     try {
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',

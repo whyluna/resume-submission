@@ -16,6 +16,7 @@
 - **Moka V2（fixture-verified）**：Moka 页面默认使用全分区 LLM 复审和可验证执行器；搜索下拉必须点击真实选项并读回，日期区间/“至今”逐部分验证，重复条目只补缺口。真实知乎页仍需再次只填不保存验收后才能标记 live-verified。
 - **Dayee WT V2（fixture-verified）**：识别中国电信/银行/国企常见 `.ipt-item`、`dayType`、`selectpicker` 和“增加更多”，支持 120 控件分区批处理；保存、暂存、提交始终禁止自动触发。真实中国电信页尚未标记 live-verified。
 - **Kuma V2（fixture-verified）**：识别阿里 `.kuma-uxform-field-core`、`.kuma-select2`、readonly 日期和图标添加动作；合并的“实习/项目经历”会按两个档案数组分别路由。真实阿里页尚未标记 live-verified。
+- **V2 性能与诊断**：小分区合并为最多 80 字段的 LLM 批次，最多 3 批并发；单批超时自动回退规则。“仅扫描表单”可直接查看 V2 分区、条目和字段数，空模型不会再显示为成功填写。
 - **隐私分档**：with-values（默认）/ labels-only / 纯规则 off；身份证号、家庭成员姓名电话任何模式下不发给 LLM；API Key 仅存本机、仅 background 使用
 
 ## 开发与构建

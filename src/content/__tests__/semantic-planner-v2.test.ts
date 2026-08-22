@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PageField, PageModel, PageSection } from '@/shared/pageModel'
 import type { SemanticPlanItem } from '@/shared/semanticPlan'
 import { createEmptyProfile } from '@/shared/storage'
-import { buildSemanticPlannerBatches } from '../planner/batches'
+import { buildSemanticPlannerBatches, coalesceSemanticPlannerBatches } from '../planner/batches'
 import { buildProfileFactSummaries } from '../planner/profileFacts'
 import { projectDateRange, projectValues } from '../planner/projection'
 import { generateRuleCandidateIndex } from '../planner/ruleCandidates'
@@ -78,6 +78,22 @@ describe('full-section planner batching', () => {
     }
     const batches = buildSemanticPlannerBatches(model, base, 'labels-only', {}, 80)
     expect(batches.flatMap((batch) => batch.fields)).toHaveLength(75)
+  })
+
+  it('coalesces small section batches into fewer LLM requests without losing fields', () => {
+    const profile = createEmptyProfile('测试档案')
+    const sample = (sectionId: string, sectionTitle: string, count: number) => ({
+      batchId: `batch_${sectionId}`, sectionId, sectionTitle,
+      fields: Array.from({ length: count }, (_, index) => ({
+        fieldId: `${sectionId}_${index}`, sectionId, sectionTitle, label: '字段', labelNear: [], placeholder: '', name: '', id: '', ariaLabel: '',
+        controlKind: 'text' as const, options: [], required: false, currentState: 'empty' as const, ruleCandidates: [],
+      })),
+      profileFacts: buildProfileFactSummaries(profile, 'labels-only'),
+    })
+    const merged = coalesceSemanticPlannerBatches([sample('a', 'A', 20), sample('b', 'B', 25), sample('c', 'C', 30)], 80)
+    expect(merged).toHaveLength(1)
+    expect(merged[0].fields).toHaveLength(75)
+    expect(merged[0].sectionTitle).toBe('A / B / C')
   })
 })
 

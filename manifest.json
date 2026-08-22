@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "秋招简历自动填写",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "填写一次简历，网申表单一键填入（只填不提交）。Moka、Dayee WT、Kuma 已通过脱敏 fixture，规则+LLM 双引擎。",
   "minimum_chrome_version": "110",
   "icons": {

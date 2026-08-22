@@ -21,6 +21,7 @@ if (!window.__rsAutofillInjected) {
   chrome.runtime.onMessage.addListener((msg: ExtMessage, _sender, sendResponse) => {
     if (msg.type === 'CONTENT_SCAN') {
       const snap = scanDocument()
+      const model = discoverPageModel(document, location.href)
       const res: ScanRes = {
         ok: true,
         groups: snap.groups.map((g) => ({
@@ -29,6 +30,19 @@ if (!window.__rsAutofillInjected) {
           fieldCount: g.fields.length,
           hasAddButton: g.buttons.some((b) => b.kind === 'add'),
         })),
+        v2: {
+          adapterId: model.adapterId,
+          maturity: model.adapterMaturity,
+          totalFields: model.sections.reduce((total, section) => total + section.fields.length
+            + section.entries.reduce((sum, entry) => sum + entry.fields.length, 0), 0),
+          forbiddenActions: [...model.globalActions, ...model.sections.flatMap((section) => section.actions)]
+            .filter((action) => action.safety === 'forbidden').length,
+          sections: model.sections.map((section) => ({
+            title: section.title,
+            entryCount: section.entries.length,
+            fieldCount: section.fields.length + section.entries.reduce((sum, entry) => sum + entry.fields.length, 0),
+          })),
+        },
       }
       sendResponse(res)
       return
@@ -97,6 +111,11 @@ async function fillPlatformV2(adapterId: 'moka' | 'dayee-wt' | 'kuma'): Promise<
   const profile = projectProfileForPage(stored, model)
   const prepared = await prepareRepeatEntries(model, profile, document)
   model = prepared.model
+  const discoveredFields = model.sections.reduce((total, section) => total + section.fields.length
+    + section.entries.reduce((sum, entry) => sum + entry.fields.length, 0), 0)
+  if (discoveredFields === 0) {
+    throw new Error('V2 未识别到可填写字段；请点击“仅扫描表单”查看 V2 分区诊断')
+  }
   const platformName = adapterId === 'moka' ? 'Moka' : adapterId === 'dayee-wt' ? 'Dayee WT' : 'Kuma'
   setStatus(`${platformName} V2：全分区规划 ${model.sections.length} 个分区…`)
   const planned = await requestPagePlan(model)

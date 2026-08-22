@@ -1,7 +1,7 @@
 import type { PageModel } from '@/shared/pageModel'
 import type { SemanticPlanItem, ValidatedSemanticPlan } from '@/shared/semanticPlan'
 import type { Profile, Settings } from '@/shared/types'
-import { buildSemanticPlannerBatches } from '@/content/planner/batches'
+import { buildSemanticPlannerBatches, coalesceSemanticPlannerBatches } from '@/content/planner/batches'
 import { generateRuleCandidateIndex } from '@/content/planner/ruleCandidates'
 import { validateSemanticPlan } from '@/content/planner/validatePlan'
 import { chat, parseJsonLoose } from './llm'
@@ -41,7 +41,8 @@ export async function planPageSemantics(
   settings: Settings,
 ): Promise<PageSemanticPlanResult> {
   const candidates = generateRuleCandidateIndex(model, profile)
-  const batches = buildSemanticPlannerBatches(model, profile, settings.privacyMode, candidates)
+  const sectionBatches = buildSemanticPlannerBatches(model, profile, settings.privacyMode, candidates)
+  const batches = coalesceSemanticPlannerBatches(sectionBatches, 80)
   const fallback = ruleFallback(batches)
   const accepted: SemanticPlanItem[] = []
   const rejected: ValidatedSemanticPlan['rejected'] = []
@@ -51,7 +52,7 @@ export async function planPageSemantics(
     return { accepted: fallback, rejected, messages: [`LLM 规划未启用，使用规则候选 ${fallback.length} 项`] }
   }
 
-  for (const batch of batches) {
+  const reviewBatch = async (batch: (typeof batches)[number]) => {
     try {
       auditBatch(batch, settings.privacyMode)
       const output = await chat(settings, [
@@ -65,14 +66,22 @@ export async function planPageSemantics(
             output: [{ fieldId: 'field id', decision: 'fill|keep-rule|replace-rule|manual|skip', profilePaths: ['allowed path'], transform: 'allowed transform', confidence: 0.9, reason: 'short reason' }],
           }),
         },
-      ], { maxTokens: 8192, temperature: 0 })
+      ], { maxTokens: 8192, temperature: 0, timeoutMs: 60_000 })
       const raw = parseJsonLoose<unknown[]>(output)
       const validated = validateSemanticPlan(Array.isArray(raw) ? raw : [], batch)
-      accepted.push(...validated.accepted)
-      rejected.push(...validated.rejected)
-      messages.push(`${batch.sectionTitle}：接受 ${validated.accepted.length}，拒绝 ${validated.rejected.length}`)
+      return { batch, validated, message: `${batch.sectionTitle}：接受 ${validated.accepted.length}，拒绝 ${validated.rejected.length}` }
     } catch (error) {
-      messages.push(`${batch.sectionTitle}：LLM 规划失败，${(error as Error).message}`)
+      const detail = (error as Error).name === 'AbortError' ? '60 秒超时，已回退规则候选' : (error as Error).message
+      return { batch, validated: null, message: `${batch.sectionTitle}：LLM 规划失败，${detail}` }
+    }
+  }
+  for (let start = 0; start < batches.length; start += 3) {
+    const reviewed = await Promise.all(batches.slice(start, start + 3).map(reviewBatch))
+    for (const item of reviewed) {
+      messages.push(item.message)
+      if (!item.validated) continue
+      accepted.push(...item.validated.accepted)
+      rejected.push(...item.validated.rejected)
     }
   }
   const decided = new Set(accepted.map((item) => item.fieldId))

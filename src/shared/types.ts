@@ -412,6 +412,13 @@ export interface GetStateRes {
 export interface ScanRes {
   ok: boolean
   groups: Array<{ sectionKey: SectionKey; sectionHint: string; fieldCount: number; hasAddButton: boolean }>
+  v2?: {
+    adapterId: string
+    maturity: string
+    totalFields: number
+    forbiddenActions: number
+    sections: Array<{ title: string; entryCount: number; fieldCount: number }>
+  }
 }
 
 export interface LlmTestRes {

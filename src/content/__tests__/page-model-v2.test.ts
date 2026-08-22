@@ -104,6 +104,18 @@ describe('PageModel V2 discovery', () => {
     expect(education?.actions.some((action) => action.kind === 'save' && action.safety === 'forbidden')).toBe(true)
     expect(model.globalActions.some((action) => action.kind === 'submit' && action.safety === 'forbidden')).toBe(true)
   })
+
+  it('uses the nearest control-bearing ancestor when a real-site section has opaque classes', () => {
+    document.body.innerHTML = `
+      <div class="opaque-shell-7f3a">
+        <div class="opaque-title-4b2c">教育背景</div>
+        <div><label>学校名称</label><input placeholder="请输入学校"></div>
+      </div>`
+    const model = discoverPageModel(document, 'https://app.mokahr.com/campus-recruitment/example#/candidateHome/resume')
+    const education = model.sections.find((section) => section.semanticCandidates.includes('educations'))
+    expect(education).toBeDefined()
+    expect(education?.entries[0].fields).toHaveLength(1)
+  })
 })
 
 describe('capture sanitization', () => {

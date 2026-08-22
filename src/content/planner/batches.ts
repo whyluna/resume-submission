@@ -61,3 +61,36 @@ export function buildSemanticPlannerBatches(
   }
   return batches
 }
+
+/** Merge small section batches to reduce LLM round trips while preserving field-level section metadata. */
+export function coalesceSemanticPlannerBatches(
+  batches: SemanticPlannerBatch[],
+  maxFieldsPerRequest = 80,
+): SemanticPlannerBatch[] {
+  const merged: SemanticPlannerBatch[] = []
+  let pending: SemanticPlannerBatch[] = []
+  let pendingFields = 0
+  const flush = () => {
+    if (pending.length === 0) return
+    const fields = pending.flatMap((batch) => batch.fields)
+    const sectionIds = Array.from(new Set(pending.map((batch) => batch.sectionId)))
+    const sectionTitles = Array.from(new Set(pending.map((batch) => batch.sectionTitle)))
+    merged.push({
+      batchId: `batch_${hashSig(`${sectionIds.join('|')}|${fields.map((field) => field.fieldId).join(',')}`)}`,
+      sectionId: sectionIds.join('+'),
+      sectionTitle: sectionTitles.join(' / '),
+      fields,
+      profileFacts: pending[0].profileFacts,
+    })
+    pending = []
+    pendingFields = 0
+  }
+  for (const batch of batches) {
+    if (pendingFields > 0 && pendingFields + batch.fields.length > maxFieldsPerRequest) flush()
+    pending.push(batch)
+    pendingFields += batch.fields.length
+    if (pendingFields >= maxFieldsPerRequest) flush()
+  }
+  flush()
+  return merged
+}

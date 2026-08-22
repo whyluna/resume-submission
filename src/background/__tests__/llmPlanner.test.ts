@@ -113,4 +113,44 @@ describe('full-section LLM planner', () => {
     expect(request).not.toContain(profile.basic.idNumber)
     expect(JSON.parse(request).batch.profileFacts.every((fact: { value?: string }) => fact.value === undefined)).toBe(true)
   })
+
+  it('coalesces several small sections into one LLM round trip', async () => {
+    const profile = createEmptyProfile('测试档案')
+    profile.basic.health = '健康'
+    const sections = Array.from({ length: 6 }, (_, index) => ({
+      id: `section_${index}`, title: `分区${index}`, root: { cssPath: `#section-${index}`, index: 0, framePath: [], signature: `section-${index}` },
+      semanticCandidates: ['basic' as const], entries: [], fields: [field(`health_${index}`, '健康状况')], actions: [],
+    }))
+    const model: PageModel = {
+      version: 2, url: 'https://example.com', title: 'test', capturedAt: 0,
+      adapterId: 'generic', adapterMaturity: 'research', sections, globalActions: [],
+    }
+    vi.mocked(chat).mockImplementation(async (_settings, messages) => {
+      const payload = JSON.parse(messages[1].content)
+      return JSON.stringify(payload.batch.fields.map((item: { fieldId: string; ruleCandidates: Array<{ profilePath: string; transform: string }> }) => ({
+        fieldId: item.fieldId, decision: 'keep-rule', profilePaths: [item.ruleCandidates[0].profilePath],
+        transform: item.ruleCandidates[0].transform, confidence: 0.9, reason: '合并批次',
+      })))
+    })
+    const result = await planPageSemantics(model, profile, settings)
+    expect(chat).toHaveBeenCalledTimes(1)
+    expect(result.accepted).toHaveLength(6)
+  })
+
+  it('falls back to rule candidates when an LLM planning batch times out', async () => {
+    const model: PageModel = {
+      version: 2, url: 'https://example.com', title: 'test', capturedAt: 0, adapterId: 'generic', adapterMaturity: 'research',
+      sections: [{
+        id: 'basic', title: '基本信息', root: { cssPath: '#basic', index: 0, framePath: [], signature: 'basic' },
+        semanticCandidates: ['basic'], entries: [], fields: [field('health-timeout', '健康状况')], actions: [],
+      }], globalActions: [],
+    }
+    const profile = createEmptyProfile('测试档案')
+    profile.basic.health = '健康'
+    const timeout = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    vi.mocked(chat).mockRejectedValue(timeout)
+    const result = await planPageSemantics(model, profile, settings)
+    expect(result.accepted).toMatchObject([{ fieldId: 'health-timeout', decision: 'keep-rule', profilePaths: ['basic.health'] }])
+    expect(result.messages.join('\n')).toContain('60 秒超时，已回退规则候选')
+  })
 })

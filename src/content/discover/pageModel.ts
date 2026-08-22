@@ -14,6 +14,9 @@ const NAV_SELECTOR = 'nav, aside, [role="navigation"], [role="menu"], [role="tab
 const SECTION_TITLE_SELECTOR = [
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'legend', '[role="heading"]',
   '[class*="section-title"]', '[class*="sectionTitle"]', '[class*="resume-title"]',
+  '[class*="module-title"]', '[class*="moduleTitle"]', '[class*="block-title"]',
+  '[class*="blockTitle"]', '[class*="form-title"]', '[class*="formTitle"]',
+  '[class*="header"]', '[class*="Header"]', '[class*="title"]', '[class*="Title"]',
 ].join(', ')
 
 const REPEAT_SECTIONS = new Set<SectionKey>([
@@ -64,13 +67,15 @@ function sectionCandidates(title: string): SectionKey[] {
 
 function findSectionRoot(titleEl: Element): Element | null {
   let node: Element | null = titleEl
-  for (let depth = 0; depth < 8 && node; depth++, node = node.parentElement) {
+  let nearestWithControls: Element | null = null
+  for (let depth = 0; depth < 12 && node; depth++, node = node.parentElement) {
     if (node.matches(NAV_SELECTOR)) return null
+    if (!nearestWithControls && node.querySelector(CONTROL_SELECTOR)) nearestWithControls = node
     const looksLikeSection = node.tagName === 'SECTION'
       || (typeof node.className === 'string' && /section|panel|resume-block|resume-part/i.test(node.className))
     if (looksLikeSection && node.querySelector(CONTROL_SELECTOR)) return node
   }
-  return null
+  return nearestWithControls
 }
 
 function directTextCandidates(fieldEl: Element): string[] {

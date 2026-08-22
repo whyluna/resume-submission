@@ -77,7 +77,15 @@ export function Popup() {
       {scanRes && (
         <div className="result">
           <b>扫描到 {scanRes.groups.length} 个分区</b>
+          {scanRes.v2 && (
+            <div style={{ fontSize: 12, marginTop: 6, color: scanRes.v2.totalFields > 0 ? '#166534' : '#b91c1c' }}>
+              V2：{scanRes.v2.adapterId} · {scanRes.v2.maturity} · {scanRes.v2.totalFields} 字段 · 禁止动作 {scanRes.v2.forbiddenActions}
+            </div>
+          )}
           <div className="list">
+            {scanRes.v2?.sections.map((section, i) => (
+              <div key={`v2-${i}`}>V2·{section.title} · {section.entryCount} 条目 · {section.fieldCount} 字段</div>
+            ))}
             {scanRes.groups.map((g, i) => (
               <div key={i}>{g.sectionHint || g.sectionKey} · {g.fieldCount} 字段{g.hasAddButton ? ' · 有添加按钮' : ''}</div>
             ))}
