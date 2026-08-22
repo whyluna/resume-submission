@@ -157,6 +157,21 @@ describe('PageModel V2 discovery', () => {
     expect(executed.verified).toBe(true)
     expect(Array.from(document.querySelectorAll('select')).map((select) => select.value)).toEqual(['2022', '09', '2026', '06'])
   })
+
+  it('groups same-label date controls across opaque nested cells and rejects field-label pseudo sections', () => {
+    const select = (values: string[]) => `<div class="opaque-cell form-item"><select><option value="">请选择</option>${values.map((value) => `<option>${value}</option>`).join('')}</select></div>`
+    document.body.innerHTML = `<section class="resume-section"><h2>教育背景</h2><div class="opaque-date-row">
+      <div class="field-title">就读时间</div>
+      ${select(['2021', '2022'])}${select(['08', '09'])}${select(['2025', '2026'])}${select(['05', '06'])}
+    </div></section>
+    <section class="resume-section"><h2>项目经验</h2><div class="form-item"><div class="module-title">项目名称</div><input></div></section>
+    <section class="resume-section"><h2>个人信息</h2><div class="form-item"><div class="module-title">工作经验</div><select><option>无</option></select></div></section>`
+    const model = discoverPageModel(document, 'https://unknown.example/resume')
+    expect(model.sections.map((section) => section.title)).toEqual(['教育背景', '项目经验', '个人信息'])
+    const education = model.sections.find((section) => section.title === '教育背景')
+    expect(education?.entries[0].fields).toHaveLength(1)
+    expect(education?.entries[0].fields[0].control.kind).toBe('date-range-parts')
+  })
 })
 
 describe('capture sanitization', () => {

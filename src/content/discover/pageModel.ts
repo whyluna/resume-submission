@@ -392,9 +392,22 @@ function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): F
     list.push(record)
     byRow.set(record.row, list)
   }
+  const byLabel = new Map<string, FieldRecord[]>()
+  for (const record of records) {
+    const label = norm(record.field.signals.label)
+    if (!label || !/日期|时间|年月|出生|入学|毕业|起止|获奖|任职/.test(label)) continue
+    const list = byLabel.get(label) ?? []
+    list.push(record)
+    byLabel.set(label, list)
+  }
+  const groupKey = (group: FieldRecord[]) => group.map((record) => record.field.id).sort().join('|')
+  const candidateGroups = [...byRow.values(), ...byLabel.values()]
+    .filter((group) => group.length >= 2)
+    .filter((group, index, groups) => groups.findIndex((candidate) => groupKey(candidate) === groupKey(group)) === index)
   const consumed = new Set<FieldRecord>()
   const combined: FieldRecord[] = []
-  for (const [row, rowRecords] of byRow) {
+  for (const rowRecords of candidateGroups) {
+    if (rowRecords.some((record) => consumed.has(record))) continue
     const signal = norm(rowRecords.flatMap((record) => [record.field.signals.label, ...record.field.signals.labelNear]).join(' '))
     if (!/日期|时间|年月|出生|入学|毕业|起止|获奖|任职/.test(signal)) continue
     const toggle = rowRecords.find((record) => record.field.control.kind === 'checkbox'
@@ -417,6 +430,10 @@ function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): F
         ? ['start-year', 'start-month', 'end-year', 'end-month']
         : twoPartRange ? ['start', 'end'] : ['year', 'month']
     const controls = [...dateRecords.map((record) => record.signalElement), ...(toggle ? [toggle.signalElement] : [])]
+    const ancestorChain: Element[] = []
+    for (let node: Element | null = dateRecords[0].identity; node; node = node.parentElement) ancestorChain.push(node)
+    const row = ancestorChain.find((candidate) => dateRecords.every((record) => candidate.contains(record.identity)))
+      ?? dateRecords[0].row ?? dateRecords[0].identity
     const parts = dateRecords.map((record, index) => part(roles[index], record.identity, record.field.control.kind))
     if (toggle) parts.push(part('current-toggle', toggle.identity, toggle.field.control.kind))
     const first = dateRecords[0]
@@ -510,21 +527,38 @@ function actionCandidates(root: Element): PageAction[] {
   return actions
 }
 
+const CANONICAL_SECTION_TITLE_RE = /^(?:个人信息|基本信息|基础信息|求职意向|应聘信息|教育背景|教育经历|学习经历|学习背景|工作经历|工作经验|实习经历|实习经验|项目经验|项目经历|语言能力|外语能力|自我描述|自我评价|个人评价|获奖经历|奖励与荣誉|奖惩情况|学生工作|校园活动|社会实践|科研成果|论文|证书|家庭成员(?:及社会关系)?|家庭及社会关系)$/
+const FIELD_LIKE_TITLE_RE = /(?:名称|时间|日期|年月|类型|号码|描述|职责|内容|城市|薪资|程度|分数|成绩|学校|专业|学历|学位|公司|职位)$/
+
+function canonicalSectionTitle(raw: string): string {
+  return cleanText(raw).replace(/[\uE000-\uF8FF]/g, '').replace(/(?:添加|新增|增加更多)$/g, '').trim()
+}
+
 function discoverSections(doc: Document): Array<{ title: string; root: Element; semanticCandidates: SectionKey[] }> {
-  const found: Array<{ title: string; root: Element; semanticCandidates: SectionKey[] }> = []
+  const found: Array<{ title: string; root: Element; titleEl: Element; semanticCandidates: SectionKey[] }> = []
   const seen = new Set<Element>()
   for (const titleEl of Array.from(doc.querySelectorAll(SECTION_TITLE_SELECTOR))) {
     if (!isVisible(titleEl) || titleEl.closest(NAV_SELECTOR)) continue
-    const title = cleanText(titleEl.textContent)
+    const title = canonicalSectionTitle(titleEl.textContent ?? '')
     if (!title || title.length > 60) continue
+    if (/^(.{2,12})\1$/.test(title)) continue
     const candidates = sectionCandidates(title)
     if (candidates.length === 0) continue
+    if (FIELD_LIKE_TITLE_RE.test(title) && !CANONICAL_SECTION_TITLE_RE.test(title)) continue
     const root = findSectionRoot(titleEl)
     if (!root || seen.has(root)) continue
     seen.add(root)
-    found.push({ title, root, semanticCandidates: candidates })
+    found.push({ title, root, titleEl, semanticCandidates: candidates })
   }
-  return found
+  return found.filter((candidate) => {
+    if (found.some((other) => other !== candidate && other.title === candidate.title
+      && other.root !== candidate.root && other.root.contains(candidate.root))) return false
+    const parent = found.find((other) => other !== candidate && other.root !== candidate.root
+      && other.root.contains(candidate.root) && other.semanticCandidates.some((value) => value === 'basic' || value === 'intention'))
+    const controls = candidate.root.querySelectorAll(CONTROL_SELECTOR).length
+    if (parent && controls <= 1 && candidate.semanticCandidates.some((value) => value === 'experiences')) return false
+    return true
+  }).map(({ title, root, semanticCandidates }) => ({ title, root, semanticCandidates }))
 }
 
 export function discoverPageModel(doc: Document = document, url: string = location.href): PageModel {
