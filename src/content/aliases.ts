@@ -12,6 +12,7 @@ export const ALIASES: Partial<Record<SectionKey, Record<string, string[]>>> = {
     birthDate: ['出生日期', '出生年月', '生日', '出生年月日'],
     nation: ['民族'],
     politicalStatus: ['政治面貌', '政治面目'],
+    idType: ['证件类型', '证件类别', '证件种类', '身份证', '护照'],
     idNumber: ['身份证号', '身份证号码', '证件号码', '身份证', 'idnumber'],
     phone: ['手机', '手机号', '手机号码', '联系电话', '联系手机', '电话号码', '电话', '联系方式', 'mobile', 'phone', 'tel'],
     email: ['邮箱', '电子邮箱', '电子邮件', '邮件地址', 'email', 'mail', 'e-mail'],

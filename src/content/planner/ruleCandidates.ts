@@ -7,6 +7,7 @@ import { ALIASES } from '../aliases'
 export type RuleCandidateIndex = Record<string, RuleCandidateV2[]>
 
 function transformFor(fieldKey: string, field: PageField): TransformId {
+  if (field.control.kind === 'date-parts') return 'split-date-single'
   if (fieldKey === '__range') {
     return field.control.kind === 'date-range-parts' ? 'split-date-parts' : 'date-range'
   }

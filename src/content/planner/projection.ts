@@ -36,6 +36,15 @@ export function projectDateRange(source: DateRangeSource): ProjectedValue {
   }
 }
 
+export function projectDateSingle(value: string): ProjectedValue {
+  const date = splitDate(value)
+  if (!date.year) return { kind: 'missing', reason: '日期值无法规范化' }
+  return {
+    kind: 'parts',
+    parts: { year: date.year, month: date.month, day: date.day },
+  }
+}
+
 function splitDateRange(values: string[]): [string, string] {
   if (values.length > 1) return [values[0], values[1]]
 
@@ -60,6 +69,7 @@ export function projectValues(transform: TransformId, values: string[]): Project
   if (transform === 'derive-boolean') return { kind: 'scalar', value: usable.length > 0 ? '是' : '否' }
   if (transform === 'join-list') return { kind: 'scalar', value: usable.join('、') }
   if (transform === 'date-range') return { kind: 'scalar', value: usable.join(' ~ ') }
+  if (transform === 'split-date-single') return projectDateSingle(first(usable))
   if (transform === 'split-date-parts') {
     const [startRaw, endRaw] = splitDateRange(usable)
     const endIsNow = /至今|现在|在读/.test(endRaw)

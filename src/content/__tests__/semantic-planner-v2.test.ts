@@ -6,7 +6,7 @@ import type { SemanticPlanItem } from '@/shared/semanticPlan'
 import { createEmptyProfile } from '@/shared/storage'
 import { buildSemanticPlannerBatches, coalesceSemanticPlannerBatches } from '../planner/batches'
 import { buildProfileFactSummaries } from '../planner/profileFacts'
-import { projectDateRange, projectValues } from '../planner/projection'
+import { projectDateRange, projectDateSingle, projectValues } from '../planner/projection'
 import { generateRuleCandidateIndex } from '../planner/ruleCandidates'
 import { validateSemanticPlan } from '../planner/validatePlan'
 import { discoverPageModel } from '../discover/pageModel'
@@ -131,6 +131,11 @@ describe('privacy and plan validation', () => {
 })
 
 describe('projection transforms', () => {
+  it('projects a canonical single date into year/month/day parts', () => {
+    expect(projectDateSingle('2002-08-17')).toEqual({
+      kind: 'parts', parts: { year: '2002', month: '08', day: '17' },
+    })
+  })
   it('projects the canonical structured range without reparsing a display string', () => {
     expect(projectDateRange({ startDate: '2022-09', endDate: '', endDateIsNow: true })).toEqual({
       kind: 'parts',

@@ -5,12 +5,13 @@ export type TransformId =
   | 'join-list'
   | 'date-range'
   | 'split-date-parts'
+  | 'split-date-single'
   | 'aggregate-text'
   | 'derive-boolean'
   | 'enum-normalize'
 
 export const TRANSFORM_IDS: readonly TransformId[] = [
-  'identity', 'join-list', 'date-range', 'split-date-parts',
+  'identity', 'join-list', 'date-range', 'split-date-parts', 'split-date-single',
   'aggregate-text', 'derive-boolean', 'enum-normalize',
 ]
 

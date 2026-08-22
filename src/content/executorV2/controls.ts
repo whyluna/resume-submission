@@ -1,6 +1,7 @@
 import type { ControlGroup, ControlPart, ControlPartRole } from '@/shared/pageModel'
 import type { ControlExecutionRequest, ControlExecutionResult } from './types'
 import { isSynonym, norm } from '@/shared/util'
+import { normalizeDateValue } from '@/shared/dateValues'
 import { commitBlur, resolveElement, selectedText, setNativeValue, valueMatches, visible, waitFor } from './dom'
 
 function result(fieldId: string, patch: Partial<ControlExecutionResult>): ControlExecutionResult {
@@ -199,7 +200,7 @@ export async function executeControl(request: ControlExecutionRequest, doc: Docu
   if (group.disabled || group.currentState === 'locked') {
     return result(request.field.id, { state: 'manual', failureClass: 'control', message: '控件不可编辑' })
   }
-  if (group.kind === 'date-range-parts') return executeDateParts(request, doc)
+  if (group.kind === 'date-parts' || group.kind === 'date-range-parts') return executeDateParts(request, doc)
   const value = scalarValue(request)
   if (value === null) return result(request.field.id, { failureClass: 'semantic', message: '控件需要单值' })
   const root = resolveElement(group.root, doc)
@@ -209,8 +210,12 @@ export async function executeControl(request: ControlExecutionRequest, doc: Docu
   if (group.kind === 'date-range') return executeDateRange(request, value, doc)
   if (group.kind === 'date-single') {
     const input = partElement(group, 'input', doc) ?? root
-    const write = writeText(input, value)
-    return write.written && write.actual === value
+    const canonical = normalizeDateValue(value)
+    if (!canonical.valid || canonical.ongoing || !canonical.value) {
+      return result(request.field.id, { state: 'manual', failureClass: 'validation', message: '日期值无法规范化，未写入页面' })
+    }
+    const write = writeText(input, canonical.value)
+    return write.written && write.actual === canonical.value
       ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期已写入并读回' })
       : result(request.field.id, { written: write.written, failureClass: 'control', message: '日期写入后读回不一致' })
   }

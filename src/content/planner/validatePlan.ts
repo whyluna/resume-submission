@@ -8,6 +8,7 @@ function isDecision(value: unknown): value is SemanticPlanItem['decision'] {
 function transformCompatible(item: SemanticPlanItem, batch: SemanticPlannerBatch): boolean {
   const field = batch.fields.find((candidate) => candidate.fieldId === item.fieldId)
   if (!field) return false
+  if (item.transform === 'split-date-single') return field.controlKind === 'date-parts'
   if (item.transform === 'split-date-parts') return field.controlKind === 'date-range-parts'
   if (item.transform === 'date-range') return ['date-single', 'date-range', 'date-range-parts'].includes(field.controlKind)
   if (item.transform === 'aggregate-text') return ['text', 'textarea', 'richtext'].includes(field.controlKind)

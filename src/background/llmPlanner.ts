@@ -61,7 +61,7 @@ export async function planPageSemantics(
           role: 'user',
           content: JSON.stringify({
             task: 'review-all-fields-in-section',
-            allowedTransforms: ['identity', 'join-list', 'date-range', 'split-date-parts', 'aggregate-text', 'derive-boolean', 'enum-normalize'],
+            allowedTransforms: ['identity', 'join-list', 'date-range', 'split-date-parts', 'split-date-single', 'aggregate-text', 'derive-boolean', 'enum-normalize'],
             batch,
             output: [{ fieldId: 'field id', decision: 'fill|keep-rule|replace-rule|manual|skip', profilePaths: ['allowed path'], transform: 'allowed transform', confidence: 0.9, reason: 'short reason' }],
           }),

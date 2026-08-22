@@ -21,7 +21,11 @@ const SINGLE_DATE_FIELDS: ReadonlyArray<[keyof Profile, string]> = [
  * 无法可靠识别的旧值原样保留并标记 invalid，避免迁移时静默丢数据。
  */
 export function normalizeDateValue(input: unknown): CanonicalDateResult {
-  const raw = String(input ?? '').trim()
+  const original = String(input ?? '').trim()
+  const raw = original
+    .replace(/\s*[（(]\s*\d+\s*岁\s*[）)]\s*$/, '')
+    .replace(/\s+\d+\s*岁\s*$/, '')
+    .trim()
   if (!raw) return { value: '', ongoing: false, valid: true }
   if (ONGOING_RE.test(raw)) return { value: '', ongoing: true, valid: true }
 
@@ -30,18 +34,18 @@ export function normalizeDateValue(input: unknown): CanonicalDateResult {
   const monthMatch = dayMatch ? null : normalizedDigits.match(/^(\d{4})\s*(?:年|[-/.])\s*(\d{1,2})\s*月?$/)
   const yearMatch = dayMatch || monthMatch ? null : normalizedDigits.match(/^(\d{4})\s*年?$/)
   const match = dayMatch ?? monthMatch ?? yearMatch
-  if (!match) return { value: raw, ongoing: false, valid: false }
+  if (!match) return { value: original, ongoing: false, valid: false }
 
   const year = match[1]
   const month = match[2] ? Number(match[2]) : undefined
   const day = match[3] ? Number(match[3]) : undefined
   if ((month !== undefined && (month < 1 || month > 12)) || (day !== undefined && (day < 1 || day > 31))) {
-    return { value: raw, ongoing: false, valid: false }
+    return { value: original, ongoing: false, valid: false }
   }
   if (month !== undefined && day !== undefined) {
     const candidate = new Date(Date.UTC(Number(year), month - 1, day))
     if (candidate.getUTCFullYear() !== Number(year) || candidate.getUTCMonth() !== month - 1 || candidate.getUTCDate() !== day) {
-      return { value: raw, ongoing: false, valid: false }
+      return { value: original, ongoing: false, valid: false }
     }
   }
   const value = [year, month?.toString().padStart(2, '0'), day?.toString().padStart(2, '0')]

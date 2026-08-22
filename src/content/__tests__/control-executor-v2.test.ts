@@ -93,6 +93,14 @@ describe('V2 verified control executor', () => {
     expect((document.querySelector('#summary') as HTMLTextAreaElement).value).toBe('12345')
   })
 
+  it('removes a display-only age suffix before writing a single date control', async () => {
+    document.body.innerHTML = '<input id="birth">'
+    const birth = field('birth', 'date-single', '#birth', [['input', '#birth']])
+    const result = await executeControl({ field: birth, value: { kind: 'scalar', value: '2002-08 (24岁)' } })
+    expect(result).toMatchObject({ state: 'verified', verified: true })
+    expect((document.querySelector('#birth') as HTMLInputElement).value).toBe('2002-08')
+  })
+
   it('projects an __range plan from structured profile dates before execution', async () => {
     document.body.innerHTML = `
       <section id="education"><div id="range">

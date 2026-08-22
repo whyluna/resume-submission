@@ -8,6 +8,8 @@ describe('canonical profile dates', () => {
     ['２０２２/９', '2022-09'],
     ['2025.6.7', '2025-06-07'],
     ['2024年', '2024'],
+    ['2002-08 (24岁)', '2002-08'],
+    ['2002-08（24岁）', '2002-08'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizeDateValue(input)).toMatchObject({ value: expected, valid: true, ongoing: false })
   })
