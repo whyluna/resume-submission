@@ -35,7 +35,7 @@ if (!window.__rsAutofillInjected) {
     }
     if (msg.type === 'CONTENT_FILL') {
       const adapterId = discoverPageModel(document, location.href).adapterId
-      const useV2 = adapterId === 'moka' || adapterId === 'dayee-wt'
+      const useV2 = adapterId === 'moka' || adapterId === 'dayee-wt' || adapterId === 'kuma'
       ;(useV2 ? fillPlatformV2(adapterId) : fillAll()).then(sendResponse).catch((e) => {
         const message = (e as Error).message
         setStatus(`填写中断：${message}`)
@@ -90,14 +90,14 @@ async function requestPagePlan(model: ReturnType<typeof discoverPageModel>): Pro
   return response ?? { ok: false, plan: [], rejected: 0, messages: [], error: '规划后台连续两次未响应，请刷新页面后重试' }
 }
 
-async function fillPlatformV2(adapterId: 'moka' | 'dayee-wt'): Promise<FillSummary> {
+async function fillPlatformV2(adapterId: 'moka' | 'dayee-wt' | 'kuma'): Promise<FillSummary> {
   const stored = await getActiveProfile()
   if (!stored) throw new Error('还没有简历档案，请先在设置页创建')
   let model = discoverPageModel(document, location.href)
   const profile = projectProfileForPage(stored, model)
   const prepared = await prepareRepeatEntries(model, profile, document)
   model = prepared.model
-  const platformName = adapterId === 'moka' ? 'Moka' : 'Dayee WT'
+  const platformName = adapterId === 'moka' ? 'Moka' : adapterId === 'dayee-wt' ? 'Dayee WT' : 'Kuma'
   setStatus(`${platformName} V2：全分区规划 ${model.sections.length} 个分区…`)
   const planned = await requestPagePlan(model)
   if (!planned.ok) throw new Error(planned.error || '语义规划失败')

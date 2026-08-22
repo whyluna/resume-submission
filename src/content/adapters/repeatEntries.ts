@@ -15,6 +15,9 @@ function enabledCount(profile: Profile, section: SectionKey): number {
 }
 
 function desiredEntries(section: PageSection, profile: Profile): number {
+  if (section.semanticCandidates.includes('experiences') && section.semanticCandidates.includes('projects')) {
+    return enabledCount(profile, 'experiences') + enabledCount(profile, 'projects')
+  }
   return Math.max(0, ...section.semanticCandidates.map((candidate) => enabledCount(profile, candidate)))
 }
 

@@ -7,6 +7,7 @@ import { cssPath, hashSig, norm } from '@/shared/util'
 import { detectAdapter } from '../adapters/detect'
 import { MOKA, mokaAdapter } from '../adapters/moka'
 import { dayeeWtAdapter } from '../adapters/dayeeWt'
+import { kumaAdapter } from '../adapters/kuma'
 
 const CONTROL_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
 const NAV_SELECTOR = 'nav, aside, [role="navigation"], [role="menu"], [role="tablist"], [class*="sidebar"], [class*="side-nav"], [class*="step"]'
@@ -472,6 +473,7 @@ export function discoverPageModel(doc: Document = document, url: string = locati
     adapterId: adapter.id,
     adapterMaturity: adapter.id === 'moka' ? mokaAdapter.maturity
       : adapter.id === 'dayee-wt' ? dayeeWtAdapter.maturity
+        : adapter.id === 'kuma' ? kumaAdapter.maturity
         : 'research',
     sections,
     globalActions,

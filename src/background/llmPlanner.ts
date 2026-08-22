@@ -40,7 +40,7 @@ export async function planPageSemantics(
   profile: Profile,
   settings: Settings,
 ): Promise<PageSemanticPlanResult> {
-  const candidates = generateRuleCandidateIndex(model)
+  const candidates = generateRuleCandidateIndex(model, profile)
   const batches = buildSemanticPlannerBatches(model, profile, settings.privacyMode, candidates)
   const fallback = ruleFallback(batches)
   const accepted: SemanticPlanItem[] = []

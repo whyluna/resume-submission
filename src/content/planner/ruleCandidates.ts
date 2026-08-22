@@ -1,6 +1,6 @@
 import type { PageField, PageModel, PageSection } from '@/shared/pageModel'
 import type { RuleCandidateV2, TransformId } from '@/shared/semanticPlan'
-import type { SectionKey } from '@/shared/types'
+import type { Profile, SectionKey } from '@/shared/types'
 import { norm } from '@/shared/util'
 import { ALIASES } from '../aliases'
 
@@ -45,15 +45,21 @@ function aliasScore(aliasRaw: string, field: PageField, sectionCompatible: boole
   return { score: Math.min(1, score), reason }
 }
 
-function candidatesForField(section: PageSection, field: PageField, entryIndex?: number): RuleCandidateV2[] {
+function candidatesForField(
+  section: PageSection,
+  field: PageField,
+  entryIndex?: number,
+  routes: Array<{ section: SectionKey; index: number }> = section.semanticCandidates.map((candidate) => ({ section: candidate, index: entryIndex ?? 0 })),
+): RuleCandidateV2[] {
   const candidates: RuleCandidateV2[] = []
-  for (const semanticSection of section.semanticCandidates) {
+  for (const route of routes) {
+    const semanticSection = route.section
     const currentSignal = norm([field.signals.label, ...field.signals.labelNear, field.signals.ariaLabel, field.signals.title].join(' '))
     if (field.control.kind === 'checkbox' && /至今|在读|在职|进行中/.test(currentSignal)
       && ['educations', 'experiences', 'projects', 'studentWork'].includes(semanticSection)) {
       candidates.push({
         fieldId: field.id,
-        profilePath: profilePath(semanticSection, entryIndex, 'endDateIsNow'),
+        profilePath: profilePath(semanticSection, route.index, 'endDateIsNow'),
         score: 0.98,
         transform: 'enum-normalize',
         reason: '进行中开关语义',
@@ -69,7 +75,7 @@ function candidatesForField(section: PageSection, field: PageField, entryIndex?:
       if (best.score < 0.35) continue
       candidates.push({
         fieldId: field.id,
-        profilePath: profilePath(semanticSection, entryIndex, fieldKey),
+        profilePath: profilePath(semanticSection, route.index, fieldKey),
         score: best.score,
         transform: transformFor(fieldKey, field),
         reason: best.reason,
@@ -79,12 +85,23 @@ function candidatesForField(section: PageSection, field: PageField, entryIndex?:
   return candidates.sort((a, b) => b.score - a.score).slice(0, 3)
 }
 
-export function generateRuleCandidateIndex(model: PageModel): RuleCandidateIndex {
+function enabledCount(profile: Profile, section: 'experiences' | 'projects'): number {
+  return profile[section].filter((item) => item.enabled !== false).length
+}
+
+export function generateRuleCandidateIndex(model: PageModel, profile?: Profile): RuleCandidateIndex {
   const index: RuleCandidateIndex = {}
   for (const section of model.sections) {
     for (const field of section.fields) index[field.id] = candidatesForField(section, field)
     for (const entry of section.entries) {
-      for (const field of entry.fields) index[field.id] = candidatesForField(section, field, entry.index)
+      let routes: Array<{ section: SectionKey; index: number }> | undefined
+      if (profile && section.semanticCandidates.includes('experiences') && section.semanticCandidates.includes('projects')) {
+        const experiences = enabledCount(profile, 'experiences')
+        routes = entry.index < experiences
+          ? [{ section: 'experiences', index: entry.index }]
+          : [{ section: 'projects', index: entry.index - experiences }]
+      }
+      for (const field of entry.fields) index[field.id] = candidatesForField(section, field, entry.index, routes)
     }
   }
   return index
