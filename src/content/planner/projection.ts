@@ -24,15 +24,18 @@ function splitDate(value: string): { year: string; month: string; day: string } 
 export function projectDateRange(source: DateRangeSource): ProjectedValue {
   const start = splitDate(source.startDate)
   const end = splitDate(source.endDate)
+  const parts: Record<string, string> = {
+    'start-year': start.year,
+    'start-month': start.month,
+    'end-year': source.endDateIsNow ? '' : end.year,
+    'end-month': source.endDateIsNow ? '' : end.month,
+    'current-toggle': source.endDateIsNow ? '是' : '否',
+  }
+  if (start.day) parts['start-day'] = start.day
+  if (end.day) parts['end-day'] = source.endDateIsNow ? '' : end.day
   return {
     kind: 'parts',
-    parts: {
-      'start-year': start.year,
-      'start-month': start.month,
-      'end-year': source.endDateIsNow ? '' : end.year,
-      'end-month': source.endDateIsNow ? '' : end.month,
-      'current-toggle': source.endDateIsNow ? '是' : '否',
-    },
+    parts,
   }
 }
 

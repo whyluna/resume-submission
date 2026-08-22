@@ -1,4 +1,5 @@
-import type { ControlGroup, ControlPart, ControlPartRole } from '@/shared/pageModel'
+import type { ControlGroup, ControlPart, ControlPartRole, PageField } from '@/shared/pageModel'
+import type { ProjectedValue } from '@/shared/semanticPlan'
 import type { ControlExecutionRequest, ControlExecutionResult } from './types'
 import { isSynonym, norm } from '@/shared/util'
 import { normalizeDateValue } from '@/shared/dateValues'
@@ -80,6 +81,52 @@ function optionFor(overlay: Element, value: string): Element | null {
   const exact = options.find((item) => norm(item.textContent ?? '') === norm(value))
   return exact ?? options.find((item) => isSynonym(item.textContent ?? '', value))
     ?? options.find((item) => valueMatches(item.textContent ?? '', value)) ?? null
+}
+
+function optionTexts(root: Element): string[] {
+  return Array.from(root.querySelectorAll('[role="option"], option, li, [class*="option"]'))
+    .filter(visible)
+    .map((item) => item.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+    .filter(Boolean)
+}
+
+/** Read safe option labels for an agent inspection call. It never commits a selection. */
+export async function inspectControlOptions(
+  field: PageField,
+  query = '',
+  doc: Document = document,
+): Promise<{ options: string[]; opened: boolean; message: string }> {
+  const group = field.control
+  const root = resolveElement(group.root, doc)
+  if (!root) return { options: [], opened: false, message: '控件引用已失效' }
+  if (root instanceof HTMLSelectElement) {
+    return { options: Array.from(root.options).map((item) => item.textContent?.trim() ?? '').filter(Boolean).slice(0, 50), opened: false, message: '已读取原生选项' }
+  }
+  if (group.kind === 'radio-group') {
+    const options = group.parts.map((candidate) => resolveElement(candidate.ref, doc)).flatMap((radio) => {
+      if (!(radio instanceof HTMLInputElement)) return []
+      const label = radio.id ? doc.querySelector(`label[for="${CSS.escape(radio.id)}"]`)?.textContent : radio.closest('label')?.textContent
+      return [String(label ?? radio.value).trim()].filter(Boolean)
+    })
+    return { options: Array.from(new Set(options)).slice(0, 50), opened: false, message: '已读取单选项' }
+  }
+  if (!['custom-select', 'combobox', 'cascader'].includes(group.kind)) {
+    return { options: group.options.slice(0, 50), opened: false, message: '该控件没有动态选项' }
+  }
+
+  const trigger = partElement(group, 'trigger', doc) ?? root
+  const input = partElement(group, 'input', doc) ?? root.querySelector('input')
+  const previous = input instanceof HTMLInputElement ? input.value : ''
+  ;(trigger as HTMLElement).click()
+  if (query && input instanceof HTMLInputElement) setNativeValue(input, query)
+  const opened = await waitFor(() => !!overlayFor(root, doc), 1000)
+  const overlay = overlayFor(root, doc)
+  const options = overlay ? optionTexts(overlay).slice(0, 50) : []
+  if (input instanceof HTMLInputElement) {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (query && input.value !== previous) setNativeValue(input, previous)
+  }
+  return { options, opened, message: opened ? '已读取关联弹层选项' : '下拉弹层未打开' }
 }
 
 async function chooseCustom(fieldId: string, group: ControlGroup, value: string, doc: Document): Promise<ControlExecutionResult> {
@@ -244,4 +291,57 @@ export async function executeControl(request: ControlExecutionRequest, doc: Docu
   return write.actual === value
     ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '文本已写入并读回' })
     : result(request.field.id, { written: true, failureClass: 'control', message: '文本写入后读回不一致' })
+}
+
+/** Fresh, read-only verification for an already executed semantic value. */
+export function verifyControlValue(field: PageField, expected: ProjectedValue, doc: Document = document): ControlExecutionResult {
+  const group = field.control
+  const root = resolveElement(group.root, doc)
+  if (!root) return result(field.id, { failureClass: 'stale-ref', message: '复验时控件引用已失效' })
+  if (expected.kind === 'missing') return result(field.id, { state: 'manual', failureClass: 'semantic', message: expected.reason })
+  if (expected.kind === 'parts') {
+    const parts = group.parts.filter((part) => part.role in expected.parts)
+    const verified = parts.length > 0 && parts.every((part) => readDatePart(part, expected.parts[part.role], doc))
+    return verified
+      ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期部件复验通过' })
+      : result(field.id, { written: true, committed: true, failureClass: 'control', message: '日期部件复验不一致' })
+  }
+
+  const value = expected.value
+  if (group.kind === 'custom-select' || group.kind === 'combobox' || group.kind === 'cascader') {
+    const verified = valueMatches(selectedText(root), value)
+    return verified
+      ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '下拉已选状态复验通过' })
+      : result(field.id, { written: true, failureClass: 'control', message: '未读到下拉已选状态' })
+  }
+  if (group.kind === 'native-select' && root instanceof HTMLSelectElement) {
+    const verified = valueMatches(root.value, value) || valueMatches(root.selectedOptions[0]?.textContent ?? '', value)
+    return verified
+      ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '原生下拉复验通过' })
+      : result(field.id, { written: true, failureClass: 'validation', message: '原生下拉复验不一致' })
+  }
+  if (group.kind === 'checkbox') {
+    const verified = root instanceof HTMLInputElement && root.checked === /^(是|true|1|yes)$/i.test(value)
+    return verified
+      ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '复选状态复验通过' })
+      : result(field.id, { written: true, failureClass: 'control', message: '复选状态复验不一致' })
+  }
+  if (group.kind === 'radio-group') {
+    const checked = group.parts.map((part) => resolveElement(part.ref, doc))
+      .find((element): element is HTMLInputElement => element instanceof HTMLInputElement && element.checked)
+    const label = checked?.id ? doc.querySelector(`label[for="${CSS.escape(checked.id)}"]`)?.textContent : checked?.closest('label')?.textContent
+    const verified = !!checked && (valueMatches(checked.value, value) || valueMatches(label ?? '', value) || isSynonym(label ?? '', value))
+    return verified
+      ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '单选状态复验通过' })
+      : result(field.id, { written: true, failureClass: 'validation', message: '单选状态复验不一致' })
+  }
+  const target = partElement(group, 'input', doc) ?? root
+  const actual = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+    ? target.value
+    : (target as HTMLElement).textContent ?? ''
+  const normalizedExpected = group.kind === 'date-single' ? normalizeDateValue(value).value : value
+  const verified = actual === normalizedExpected
+  return verified
+    ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '字段值复验通过' })
+    : result(field.id, { written: true, failureClass: 'control', message: '字段值复验不一致' })
 }

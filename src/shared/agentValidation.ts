@@ -85,9 +85,13 @@ function isToolCall(raw: unknown): raw is AgentToolCall {
 }
 
 /** Validate LLM output before any content-side tool can execute. */
-export function validateAgentPlan(rawCalls: unknown[], fields: AgentFieldObservation[], validFactIds: Set<string>): AgentPlanEnvelope {
+export function validateAgentPlan(
+  rawCalls: unknown[],
+  fields: AgentFieldObservation[],
+  validFactIds: Set<string>,
+  validSectionIds: Set<string> = new Set(fields.map((field) => field.sectionId)),
+): AgentPlanEnvelope {
   const fieldById = new Map(fields.map((field) => [field.fieldId, field]))
-  const sectionIds = new Set(fields.map((field) => field.sectionId))
   const accepted: AgentToolCall[] = []
   const rejected: AgentPlanEnvelope['rejected'] = []
   const terminalCoverage = new Set<string>()
@@ -100,7 +104,7 @@ export function validateAgentPlan(rawCalls: unknown[], fields: AgentFieldObserva
     const fieldId = fieldIdOf(raw)
     const field = fieldId ? fieldById.get(fieldId) : undefined
     if (fieldId && !field) { rejected.push({ raw, reason: '未知 fieldId' }); continue }
-    if ('sectionId' in raw.args && !sectionIds.has(raw.args.sectionId)) {
+    if ('sectionId' in raw.args && !validSectionIds.has(raw.args.sectionId)) {
       rejected.push({ raw, reason: '未知 sectionId' }); continue
     }
     if (field?.existingState === 'locked' && raw.tool !== 'mark_manual' && raw.tool !== 'mark_skip') {

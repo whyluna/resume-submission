@@ -40,6 +40,7 @@ export async function planAgentShadow(
   const candidates = generateRuleCandidateIndex(model, profile)
   const observation = buildAgentObservation(model, profile, settings.privacyMode, candidates)
   const validFactIds = new Set(observation.facts.map((fact) => fact.factId))
+  const validSectionIds = new Set(observation.sections.map((section) => section.sectionId))
   const trace: AgentTrace = {
     traceId: `trace_${Date.now().toString(36)}`,
     providerCapability: 'json-tools',
@@ -78,7 +79,7 @@ export async function planAgentShadow(
   }
 
   const firstRaw = await runRound(observation.fields, 1, [])
-  const first = validateAgentPlan(firstRaw, observation.fields, validFactIds)
+  const first = validateAgentPlan(firstRaw, observation.fields, validFactIds, validSectionIds)
   let calls = [...first.calls]
   let rejected = [...first.rejected]
   let missing = [...first.missingFieldIds]
@@ -90,7 +91,7 @@ export async function planAgentShadow(
       `上一轮漏掉 fieldIds: ${missing.join(',')}`,
       ...rejected.map((item) => item.reason),
     ])
-    const second = validateAgentPlan(secondRaw, missingFields, validFactIds)
+    const second = validateAgentPlan(secondRaw, missingFields, validFactIds, validSectionIds)
     calls.push(...second.calls)
     rejected.push(...second.rejected)
     missing = second.missingFieldIds
