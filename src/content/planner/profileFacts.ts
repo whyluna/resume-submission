@@ -54,7 +54,7 @@ export function buildProfileFactSummaries(profile: Profile, privacyMode: Privacy
         if ('startDate' in item || 'endDate' in item || 'endDateIsNow' in item) {
           const start = stringValue(item.startDate)
           const end = item.endDateIsNow === true ? '至今' : stringValue(item.endDate)
-          push(`${section.key}[${index}].__range`, '起止时间', '__range', [start, end].filter(Boolean).join(' ~ '))
+          push(`${section.key}[${index}].__range`, '起止时间', '__range', [start, end].filter(Boolean).join(' ~ '), 'date')
         }
       })
       continue

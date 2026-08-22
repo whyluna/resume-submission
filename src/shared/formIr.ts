@@ -22,6 +22,7 @@ export interface EntryRouteIR {
 
 export interface FormComponentPartIR {
   partId: string
+  roleCandidates: ControlPartRole[]
   role: ControlPartRole
   controlKind: ControlGroupKind
   tag: string

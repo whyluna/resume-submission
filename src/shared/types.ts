@@ -6,6 +6,7 @@
 import type { PageModel } from './pageModel'
 import type { SemanticPlanItem } from './semanticPlan'
 import type { AgentToolCall, AgentToolResult, AgentTrace } from './agent'
+import type { FormPageIR } from './formIr'
 
 // ---------------- Profile：简历档案 ----------------
 
@@ -400,6 +401,7 @@ export type ExtMessage =
   | { type: 'LLM_MATCH'; fields: LlmMatchFieldIn[]; profileLines: string[] } // content → bg：字段映射兜底
   | { type: 'LLM_PLAN_PAGE'; model: PageModel } // content → bg：V2 全分区语义规划
   | { type: 'LLM_AGENT_ROUND'; model: PageModel; round: number; targetFieldIds: string[]; previousResults: AgentToolResult[]; previousIssues: string[] }
+  | { type: 'LLM_PLAN_ONESHOT'; ir: FormPageIR }
   | { type: 'CONTENT_SCAN' } // popup → content：仅扫描
   | { type: 'CONTENT_FILL' } // popup → content：扫描+匹配+填写
   | { type: 'CONTENT_FILL_V2' } // 调试/灰度：V2 PageModel → planner → verified executor
@@ -446,5 +448,17 @@ export interface AgentRoundResponse {
   rejected: string[]
   trace?: AgentTrace
   observationFieldCount: number
+  error?: string
+}
+
+export interface OneShotPlannerResponse {
+  ok: boolean
+  mode: 'llm' | 'rule-fallback'
+  calls: AgentToolCall[]
+  modelRequestCount: 0 | 1
+  complete: boolean
+  rejected: string[]
+  messages: string[]
+  latencyMs: number
   error?: string
 }

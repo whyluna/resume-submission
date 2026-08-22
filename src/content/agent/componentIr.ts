@@ -52,6 +52,7 @@ function partIr(field: PageField, partIndex: number, doc: Document): FormCompone
   const input = el instanceof HTMLInputElement ? el : null
   return {
     partId: part.ref.signature,
+    roleCandidates: [part.role],
     role: part.role,
     controlKind: kind,
     tag: el?.tagName.toLowerCase() ?? 'unknown',
