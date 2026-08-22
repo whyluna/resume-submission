@@ -20,7 +20,7 @@ function enabledCount(profile: Profile, section: SectionKey): number {
   return Array.isArray(rows) ? rows.filter((row) => (row as Record<string, unknown>)?.enabled !== false).length : 0
 }
 
-function desiredEntries(section: PageSection, profile: Profile): number {
+export function desiredEntryCount(section: PageSection, profile: Profile): number {
   if (section.semanticCandidates.includes('experiences') && section.semanticCandidates.includes('projects')) {
     return enabledCount(profile, 'experiences') + enabledCount(profile, 'projects')
   }
@@ -37,7 +37,7 @@ export async function prepareRepeatEntries(
   let added = 0
   const messages: string[] = []
   for (const initialSection of initial.sections) {
-    const desired = desiredEntries(initialSection, profile)
+    const desired = desiredEntryCount(initialSection, profile)
     if (desired <= initialSection.entries.length) continue
     let section = model.sections.find((candidate) => candidate.id === initialSection.id)
       ?? model.sections.find((candidate) => candidate.title === initialSection.title)

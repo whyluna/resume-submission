@@ -3,6 +3,7 @@ import type { RuleCandidateV2, TransformId } from '@/shared/semanticPlan'
 import type { Profile, SectionKey } from '@/shared/types'
 import { norm } from '@/shared/util'
 import { ALIASES } from '../aliases'
+import { buildEntryRoutes } from './entryRoutes'
 
 export type RuleCandidateIndex = Record<string, RuleCandidateV2[]>
 
@@ -98,22 +99,15 @@ function candidatesForField(
   return candidates.sort((a, b) => b.score - a.score).slice(0, 3)
 }
 
-function enabledCount(profile: Profile, section: 'experiences' | 'projects'): number {
-  return profile[section].filter((item) => item.enabled !== false).length
-}
-
 export function generateRuleCandidateIndex(model: PageModel, profile?: Profile): RuleCandidateIndex {
   const index: RuleCandidateIndex = {}
+  const entryRoutes = profile ? new Map(buildEntryRoutes(model, profile).map((route) => [route.pageEntryId, route])) : new Map()
   for (const section of model.sections) {
     for (const field of section.fields) index[field.id] = candidatesForField(section, field)
     for (const entry of section.entries) {
       let routes: Array<{ section: SectionKey; index: number }> | undefined
-      if (profile && section.semanticCandidates.includes('experiences') && section.semanticCandidates.includes('projects')) {
-        const experiences = enabledCount(profile, 'experiences')
-        routes = entry.index < experiences
-          ? [{ section: 'experiences', index: entry.index }]
-          : [{ section: 'projects', index: entry.index - experiences }]
-      }
+      const entryRoute = entryRoutes.get(entry.id)
+      if (entryRoute) routes = [{ section: entryRoute.profileSection, index: entryRoute.profileIndex }]
       for (const field of entry.fields) index[field.id] = candidatesForField(section, field, entry.index, routes)
     }
   }
