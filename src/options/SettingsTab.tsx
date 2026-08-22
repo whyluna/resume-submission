@@ -63,6 +63,22 @@ export function SettingsTab() {
         </label>
       </div>
       <div className="toolbar"><button className="btn" onClick={async () => { await saveSettings(s); showToast('设置已保存') }}>保存设置</button></div>
+
+      <h2>适配器成熟度</h2>
+      <div className="adapter-grid">
+        {[
+          ['Moka', 'fixture-verified', '知乎结构 fixture 已通过；真实页待再次验收'],
+          ['Dayee WT', 'fixture-verified', '中国电信/银行/国企结构 fixture 已通过'],
+          ['Kuma', 'fixture-verified', '阿里结构 fixture 已通过'],
+          ['Beisen', 'research', '缺少登录后 iframe 脱敏样本，不宣称支持'],
+          ['Generic', 'research', '继续使用稳定旧路径，未知组件会待确认'],
+        ].map(([name, maturity, note]) => (
+          <div className="adapter-card" key={name}>
+            <b>{name}</b><span className={`maturity ${maturity}`}>{maturity}</span>
+            <div className="note">{note}</div>
+          </div>
+        ))}
+      </div>
       {toast && <div className="toast">{toast}</div>}
     </div>
   )

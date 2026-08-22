@@ -251,6 +251,10 @@ try {
   const docxText = (await opt.textContent('#rs-import-text')) ?? ''
   ok('DOCX 本地解析出中文文本', docxText.includes('张三丰') && docxText.includes('示例大学'), `长度 ${docxText.length}`)
 
+  ok('发送解析文本前有明确披露且按钮默认禁用',
+    ((await opt.textContent('#rs-import-disclosure')) ?? '').includes('发送给你配置的大模型 API 服务商')
+    && await opt.isDisabled('#rs-extract-btn'))
+  await opt.check('#rs-import-consent')
   await opt.click('#rs-extract-btn')
   await opt.waitForSelector('#rs-import-save', { timeout: 120000 })
   const saveLabel = (await opt.textContent('#rs-import-save')) ?? ''

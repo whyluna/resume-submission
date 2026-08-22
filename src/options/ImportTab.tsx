@@ -15,6 +15,7 @@ export function ImportTab({ onGoSettings }: { onGoSettings: () => void }) {
   const [busy, setBusy] = useState<'parse' | 'llm' | 'save' | null>(null)
   const [err, setErr] = useState('')
   const [apiReady, setApiReady] = useState<boolean | null>(null)
+  const [consentToSend, setConsentToSend] = useState(false)
   const [toast, showToast] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   /** 复位令牌：新解析开始时递增，作废未触发的「保存后重置」定时器，避免清掉新内容 */
@@ -22,7 +23,7 @@ export function ImportTab({ onGoSettings }: { onGoSettings: () => void }) {
 
   const checkApi = async () => {
     const s: Settings = await getSettings()
-    const ready = !!(s.apiBaseUrl && s.apiKey && s.model)
+    const ready = s.privacyMode !== 'off' && !!(s.apiBaseUrl && s.apiKey && s.model)
     setApiReady(ready)
     return ready
   }
@@ -33,6 +34,7 @@ export function ImportTab({ onGoSettings }: { onGoSettings: () => void }) {
     const cleaned = cleanResumeText(t)
     if (!cleaned) { setErr('没有解析出文本，换一个文件或直接粘贴'); return }
     setText(cleaned)
+    setConsentToSend(false)
     setDoc(d ?? null)
     setStage('extracted')
   }
@@ -47,8 +49,9 @@ export function ImportTab({ onGoSettings }: { onGoSettings: () => void }) {
   }
 
   const runExtract = async () => {
+    if (!consentToSend) { setErr('请先确认解析文本将发送给已配置的大模型服务商'); return }
     const ready = await checkApi()
-    if (!ready) { setErr('未配置 API，请先到「API 与偏好」填写'); return }
+    if (!ready) { setErr('API 未配置，或隐私模式为 off；请先到「API 与偏好」调整'); return }
     setBusy('llm'); setErr('')
     try {
       const res = (await chrome.runtime.sendMessage({ type: 'LLM_EXTRACT', text })) as LlmExtractRes
@@ -89,7 +92,7 @@ export function ImportTab({ onGoSettings }: { onGoSettings: () => void }) {
     <div id="rs-import">
       {apiReady === false && (
         <div className="tips warn">
-          还没配置大模型 API，抽取功能不可用（文本解析不受影响）。
+          大模型 API 未启用或隐私模式为 off，AI 抽取不可用（本地文本解析不受影响）。
           <a onClick={onGoSettings} style={{ marginLeft: 8, cursor: 'pointer', textDecoration: 'underline' }}>去配置 →</a>
         </div>
       )}
@@ -121,11 +124,21 @@ export function ImportTab({ onGoSettings }: { onGoSettings: () => void }) {
           )}
           <pre id="rs-import-text" className="text-preview">{text.slice(0, 4000)}</pre>
           {stage === 'extracted' && (
-            <div className="toolbar">
-              <button id="rs-extract-btn" className="btn" disabled={busy !== null} onClick={runExtract}>
-                {busy === 'llm' ? 'AI 抽取中…（最长 150s）' : '③ AI 结构化抽取 →'}
-              </button>
-            </div>
+            <>
+              <div className="tips warn" id="rs-import-disclosure">
+                原始文件不会上传，但点击 AI 抽取后，以上解析文本会发送给你配置的大模型 API 服务商。
+                文本可能包含姓名、联系方式、教育和工作经历等个人信息；当前发送前不会自动删除这些内容。
+                <label style={{ display: 'block', marginTop: 8 }}>
+                  <input id="rs-import-consent" type="checkbox" checked={consentToSend} onChange={(e) => setConsentToSend(e.target.checked)} />
+                  {' '}我已了解并同意将本次解析文本发送给已配置的服务商用于结构化抽取
+                </label>
+              </div>
+              <div className="toolbar">
+                <button id="rs-extract-btn" className="btn" disabled={busy !== null || !consentToSend} onClick={runExtract}>
+                  {busy === 'llm' ? 'AI 抽取中…（最长 150s）' : '③ AI 结构化抽取 →'}
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
