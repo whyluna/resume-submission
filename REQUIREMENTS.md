@@ -229,6 +229,9 @@ interface ProfileFact {
 
 ## 8. 规则与 LLM 协同策略
 
+> v0.3 direction: [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md) supersedes the one-shot
+> mapping pipeline for agent-enabled mode. The requirements below remain valid as safety and fallback constraints.
+
 ### 8.1 默认策略
 
 启用 API 时，LLM 默认按分区复审**全部可填写字段**，而不是仅处理规则未匹配项：
@@ -241,6 +244,19 @@ interface ProfileFact {
 6. 只有通过本地验证的计划才进入执行器。
 
 纯规则 `off` 模式必须继续可用。
+
+### 8.5 LLM Agent 工具循环
+
+启用 Agent 模式后，LLM 必须主导全部 eligible 字段的语义决策，而不是只纠正规则或补充漏项：
+
+- 每个字段必须得到 fill/tool-call/manual/skip 之一，模型漏项不得静默接受；
+- LLM 可调用受控的观察、文本、枚举、日期、布尔、重复条目和验证工具；
+- 工具参数只能引用 fieldId、partId、sectionId 和 Profile factId/path；
+- LLM 不得返回选择器、任意脚本或原始 DOM 操作；
+- 工具结果必须返回给 LLM，允许最多两轮修复；
+- 只有本地 verifier 可以产生 verified 状态；
+- 保存、下一步、声明、提交和投递不得出现在工具清单中；
+- 敏感事实的真实值只能由工具网关在本地解析，不能进入模型上下文。
 
 ### 8.2 LLM 输入
 

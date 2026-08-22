@@ -520,3 +520,61 @@ src/
 7. 知乎真实页面只填不保存验收。
 
 该切片通过后，再把同一核心模型扩展到 DayeeWT 和 Kuma，不先并行堆叠三个独立实现。
+
+## 18. M9：LLM-First Agent 重构
+
+详细架构见 [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)。本阶段取代继续堆叠站点特例。
+
+### 18.1 A1 Agent 合同
+
+- [ ] AgentField / AgentControlGroup / AgentFact；
+- [ ] ToolCall / ToolResult / AgentTrace；
+- [ ] provider capability：native-tools / json-tools / mapping-only；
+- [ ] 每字段强制终态和漏项检测；
+- [ ] 保存/下一步/提交工具不存在的类型级断言。
+
+### 18.2 A2 通用观察能力
+
+- [ ] 复合表单行拆分；
+- [ ] 单日期、年月、年月日、区间、四段/六段日期和 current toggle；
+- [ ] 动态 Portal 与 trigger 关联；
+- [ ] 结构相似重复条目发现；
+- [ ] 合并分区本地 route table；
+- [ ] opaque class 和随机嵌套 fixture。
+
+### 18.3 A3 语义工具网关
+
+- [ ] inspect_section / inspect_control / inspect_options / inspect_entries；
+- [ ] fill_text_from_fact；
+- [ ] select_option_from_fact；
+- [ ] fill_date_from_facts；
+- [ ] set_boolean_from_fact；
+- [ ] ensure_entries；
+- [ ] verify_field / verify_section；
+- [ ] 所有工具本地路径、类型、敏感和动作安全校验。
+
+### 18.4 A4 Agent 循环
+
+- [ ] 首轮批量工具计划；
+- [ ] 工具执行结果回传；
+- [ ] 最多两轮 repair；
+- [ ] 缺失字段重试一次后 manual；
+- [ ] provider native tool calling 与 JSON tool envelope 兼容；
+- [ ] 典型页面不超过两轮模型调用。
+
+### 18.5 A5 可观察性和 shadow mode
+
+- [ ] 规则 hints、LLM calls、tool calls、rejections、repairs 分开显示；
+- [ ] Agent shadow mode 不写页面；
+- [ ] 与当前 V2 对比 mapped/verified/错误类型；
+- [ ] 报告不包含完整敏感值。
+
+### 18.6 A6 泛化验收
+
+- [ ] 随机 class/嵌套深度；
+- [ ] 复合证件与电话行；
+- [ ] 日期形态组合矩阵；
+- [ ] 多 Portal 并存和失败清理；
+- [ ] 奖项/教育/项目多条目无重复；
+- [ ] Moka、Dayee WT、Kuma 分别通过 live gate；
+- [ ] 全部保存/提交动作零点击。
