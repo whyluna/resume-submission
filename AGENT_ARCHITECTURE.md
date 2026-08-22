@@ -1,372 +1,244 @@
-# LLM-First Resume Autofill Agent Architecture
+# 通用简历填写混合语义架构
 
-> Version: 0.3 draft
->
-> Date: 2026-08-22
->
-> Status: A1/A3/A4 beta implemented; A2 generalization and A6 live acceptance in progress
+> 版本：v1.0
+> 日期：2026-08-22
+> 当前状态：本地单元测试与浏览器 E2E 已通过；真实知乎、阿里、中国电信页面待用户只填不保存验收
 
-## 1. Product decision
+## 1. 核心决策
 
-The extension will move from **rules fill first, LLM repairs later** to an **LLM-led agent with local semantic tools**.
+本项目不在“规则填入”和“LLM 填入”之间二选一，也不把浏览器直接操作权交给 LLM。
 
-- The LLM owns semantic interpretation, mapping, tool selection, and bounded repair decisions.
-- Local code owns observation, facts, tool execution, validation, privacy, authoritative readback, and safety.
-- Rules become evidence for the agent and the no-API fallback. A rule match is never equivalent to a successful fill.
-- The LLM never returns arbitrary JavaScript, CSS selectors, or executable code.
-- Save, next, consent, submit, and job-application actions are not exposed as tools.
+正确分工是：
 
-This is not a browser agent that receives unrestricted DOM access. It is a typed resume-filling agent operating on stable semantic IDs and an allowlisted tool protocol.
+> 规则负责确定性候选和安全约束，LLM 负责一次性全页面语义复审，本地适配器负责组件操作和权威读回。
 
-## 2. Why the current V2 is insufficient
+| 能力 | 主要负责人 |
+|---|---|
+| 姓名、手机、学校等标准字段候选 | 规则 |
+| 隐私、路径、类型、条目下标和动作安全 | 本地校验器 |
+| 长尾字段名、相似字段消歧、合并分区、聚合/派生语义 | LLM |
+| 下拉点击、日期拆分、事件触发、重复条目创建 | 本地适配器 |
+| 是否真正填写成功 | 本地最终读回 |
 
-The current V2 still follows a static pipeline:
+LLM 的参与深度体现在“理解所有字段”，不是获得任意 DOM、脚本或坐标操作能力。
 
-```text
-PageModel → rule candidates → one-shot LLM mapping → local execution
-```
-
-That design fails when perception or control shape is ambiguous:
-
-- a row contains a document-type select and a document-number input under one label;
-- a date may be one input, year/month parts, a start/end range, four parts, six parts, or an ongoing toggle;
-- a custom select exposes its options only after interaction;
-- repeated cards cannot be indexed until an add action changes the DOM;
-- a tool attempt may reveal new state that requires a different plan.
-
-A one-shot mapping response cannot inspect new state or repair its own tool choice. Sparse LLM output is also currently accepted silently, which makes the LLM appear present while contributing little.
-
-## 3. Target architecture
-
-```mermaid
-flowchart LR
-  O[Local observer] --> M[Semantic page model]
-  F[Local profile facts] --> A[LLM agent]
-  M --> A
-  R[Rule hints] --> A
-  A --> G[Tool gateway]
-  G --> X[Local executors]
-  X --> V[Authoritative verifier]
-  V -->|verified| P[Report]
-  V -->|ambiguous or failed| A
-  A -->|manual or skip| P
-```
-
-The normal path should use two model rounds:
-
-1. **Plan round:** return tool calls for all straightforward fields and explicit terminal decisions for the rest.
-2. **Repair round:** receive only failed/ambiguous tool results, inspect additional state if needed, and retry with another valid tool or mark manual.
-
-An uncertain control may require an extra observation tool call, but the agent has a strict turn budget. It cannot loop indefinitely.
-
-## 4. Agent state machine
-
-Each field has an independent state:
+## 2. 当前活动链路
 
 ```text
-observed
-  → mapped
-  → tool-planned
-  → written
-  → committed
-  → verified
-
-Any state may terminate as manual, skipped, or failed.
+结构化 Profile
+  +
+登录后当前页面 DOM
+  ↓
+PageModel：分区 / 条目 / 字段 / 控件组 / 禁止动作
+  ↓
+本地补齐缺少的重复条目，并重新扫描
+  ↓
+EntryRoute：页面第 N 条 ↔ Profile 具体数组下标
+  ↓
+规则为每个字段生成 top-N 候选
+  ↓
+FormPageIR：脱敏组件结构 + 日期槽位 + 下拉交互 + 候选 + facts
+  ↓
+一次 LLM 请求：全页面语义复审
+  ↓
+SemanticPlan：fieldId + profilePaths + transform + decision
+  ↓
+本地再次校验路径 / 条目 / 类型 / 敏感策略 / transform
+  ↓
+本地适配器批量执行
+  ↓
+最终重新扫描并读回
+  ↓
+mapping → written → committed → verified 分层报告
 ```
 
-Each eligible field must receive exactly one terminal outcome. Missing fields in an LLM response are protocol errors, not silent unmatched fields.
+活动入口为 `CONTENT_FILL → runSemanticOnce`。旧的多轮 Agent/tool-call 实验模块不在生产入口或 background 消息路由中执行。
 
-Page execution proceeds as follows:
+## 3. FormPageIR：模型看到什么
 
-1. Build a sanitized page and control graph.
-2. Build a fact catalog containing stable paths, types, sensitivity, and optional non-sensitive values.
-3. Ask the agent to cover every eligible field.
-4. Validate all tool calls locally.
-5. Execute safe calls in a deterministic order.
-6. Re-locate controls and read authoritative component state.
-7. Send only failures and new observations to the repair round.
-8. Produce a report separating rule hints, LLM decisions, tool calls, rejections, repairs, and final states.
+模型不接收原始整页 `outerHTML`。Content Script 从当前渲染 DOM 生成白名单、脱敏、可执行约束明确的组件 IR。
 
-## 5. Observation model
+每个字段包含：
 
-### 5.1 Semantic field
+- 稳定 `fieldId`、分区、页面条目 ID 和下标；
+- label、邻近语义、placeholder 和 ARIA；
+- `controlKind`、允许的 `transform`；
+- 合成的 `componentHtml`，只保留 tag、role、format、interaction 等白名单属性；
+- 日期部件的精确槽位，例如 `start-year / start-month / end-year / end-month`；
+- 下拉是原生选择，还是必须打开浮层并点击选项；
+- `entryRoute.factPrefix`，例如页面项目第 2 条只能引用 `projects[1].*`；
+- 规则 top-N 候选、分数和理由；
+- 可引用的 Profile facts；受限事实只暴露路径和含义，不暴露真实值。
 
-The observer must represent both a single control and compound rows:
+IR 不包含：
+
+- CSS selector、XPath、坐标；
+- 当前输入值、Cookie、Token、URL 查询参数；
+- 事件处理器、脚本、任意 data 属性；
+- 保存、下一步、提交或删除的执行权限。
+
+## 4. 规则层
+
+规则层不先写页面，也不宣布成功。它只生成候选：
 
 ```ts
-interface AgentField {
+interface RuleCandidate {
   fieldId: string
-  sectionId: string
-  entryId?: string
-  labels: string[]
-  constraints: {
-    required: boolean
-    maxLength?: number
-    existingState: 'empty' | 'non-empty' | 'locked' | 'unknown'
-  }
-  controlGroupId: string
-  ruleHints: RuleCandidate[]
-}
-
-interface AgentControlGroup {
-  controlGroupId: string
-  shapeCandidates: ControlShapeCandidate[]
-  parts: AgentControlPart[]
-  compoundSiblings: string[]
-  capabilities: Array<
-    | 'write-text'
-    | 'select-option'
-    | 'select-many'
-    | 'fill-date'
-    | 'toggle'
-    | 'upload-manual'
-  >
+  profilePath: string
+  score: number
+  transform: TransformId
+  reason: string
 }
 ```
 
-Part IDs are opaque stable IDs. The model never receives or returns CSS selectors.
+规则最适合标准字段、明确复合行和类型约束。例如同一“证件号码”行中的选择控件高置信映射 `basic.idType`，文本控件映射 `basic.idNumber`。这个结构约束会进入模型输入和本地校验，防止二者颠倒。
 
-### 5.2 Dynamic inspection
+## 5. 单次 LLM 全页面语义复审
 
-The initial model contains only cheap observations. The agent may request more information for uncertain controls:
+配置 API 后，每次填写最多进行一次语义复审请求。模型必须复审所有字段，包括已有高置信规则候选的标准字段，而不是只补规则漏项。
 
-- option samples and loading state;
-- linked Portal/listbox identity;
-- selected-state representation;
-- date option domains, such as four-digit years or months 1–12;
-- compound-row sibling controls;
-- repeated-entry structure and count.
-
-Sensitive input values are never returned by inspection tools.
-
-## 6. Profile fact catalog
-
-The agent maps fields to facts rather than inventing raw values:
+唯一允许的输出是：
 
 ```ts
-interface AgentFact {
-  factId: string       // stable alias for the local path
-  path: string         // e.g. educations[0].startDate
-  label: string
-  valueType: 'text' | 'enum' | 'date' | 'boolean' | 'number' | 'list' | 'date-range'
-  sensitivity: 'normal' | 'personal' | 'sensitive' | 'restricted'
-  hasValue: boolean
-  value?: string       // only when privacy mode permits
+interface SemanticPlanItem {
+  fieldId: string
+  decision: 'fill' | 'keep-rule' | 'replace-rule' | 'manual' | 'skip'
+  profilePaths: string[]
+  transform: TransformId
+  confidence: number
+  reason: string
 }
 ```
 
-Tool calls reference `factId` or `path`. The gateway resolves the real value locally. Therefore the model can map an ID-number field without receiving the ID number.
+模型不能输出 ToolCall、真实值、selector、点击、脚本或 DOM 操作。
 
-Derived facts are first-class and locally computed, for example:
+模型擅长处理：
 
-- country/region from citizenship or ID type;
-- phone country code and local phone number;
-- highest-education school city;
-- date ranges from start/end/current fields;
-- award count and award summary;
-- presence of a scholarship, exchange, recommendation, or student-leadership fact.
+- “成长故乡”等长尾叫法；
+- “职责”是角色、工作内容还是项目描述；
+- 实习/项目合并分区；
+- 奖项聚合、摘要和派生是否项；
+- 未见过的企业自定义字段。
 
-## 7. Tool protocol
+模型漏项或单项输出不合法时，只对对应字段采用规则候选或 `manual` 安全决策。有效模型决策继续保留，因此不存在“整页 LLM”和“整页规则”二选一。
 
-### 7.1 Observation tools
+## 6. 本地语义校验
 
-```ts
-inspect_section({ sectionId })
-inspect_control({ fieldId })
-inspect_options({ fieldId, query?: string })
-inspect_entries({ sectionId })
-```
+模型输出在 background 和 content 两侧都不具备直接写权限。进入执行器前至少校验：
 
-Observation results contain labels, capabilities, part IDs, option text, and state classifications. They do not contain protected input values, cookies, tokens, storage, or files.
+- `fieldId` 和 `profilePaths` 必须存在；
+- 重复条目的 path 必须属于 `entryRoute.factPrefix`；
+- transform 必须属于该组件的 `allowedTransforms`；
+- 固定下拉只接受枚举事实；
+- 选择控件不得引用身份证号等 restricted 事实；
+- 日期组件只能引用日期、日期区间或布尔事实；
+- 锁定或非空字段默认 `skip`；
+- 复合组件的高置信结构语义不得被颠倒；
+- 缺失事实不能由模型生成。
 
-### 7.2 Action tools
+## 7. 重复条目
 
-```ts
-fill_text_from_fact({ fieldId, factIds, transform: 'identity' | 'join-list' | 'aggregate-text' })
+重复条目在模型请求前由本地逻辑处理：
 
-select_option_from_fact({ fieldId, factId, match: 'exact' | 'synonym' | 'normalized' })
+1. 统计 Profile 中启用的教育、项目、奖项等条目；
+2. 只点击被识别为 `add + automatic` 的动作；
+3. 每次点击后验证条目数确实增加；
+4. 达到目标数后重新扫描；
+5. 建立页面条目到 Profile 原始数组下标的显式路由；
+6. 禁用条目不会导致后续索引错位；
+7. 合并的实习/项目分区按固定顺序建立路由。
 
-fill_date_from_facts({
-  fieldId,
-  startFactId?: string,
-  endFactId?: string,
-  currentFactId?: string,
-  requestedShape: 'auto' | 'single' | 'range'
-})
+删除、保存、下一步和提交动作永不用于自动补条目。
 
-set_boolean_from_fact({ fieldId, factId })
+## 8. 日期
 
-ensure_entries({ sectionId, desiredCount })
+Profile 日期原子使用 `YYYY`、`YYYY-MM` 或 `YYYY-MM-DD`，进行中状态独立存储为 `endDateIsNow`。
 
-mark_manual({ fieldId, reason })
-mark_skip({ fieldId, reason })
-```
+LLM 只决定语义路径和白名单转换：
 
-There is intentionally no generic `click`, `type`, `evaluate`, `run_js`, `save`, `next`, or `submit` tool.
+- 单日期文本/原生日期：`identity`；
+- 单日期拆分年/月/日：`split-date-single`；
+- 双输入日期区间：`date-range`；
+- 四段或六段日期：`split-date-parts`。
 
-### 7.3 Verification tools
+本地执行器依据 IR 的部件角色写入。`2022-09 ~ 2026-06` 不可能被写入四个物理控件；执行器会分别选择 `2022 / 09 / 2026 / 06`，再逐项读回。自定义年月下拉必须打开关联浮层、点击目标选项，并读到已选状态。
 
-Verification is normally automatic after every action. The agent may explicitly request:
+## 9. 下拉和搜索组件
 
-```ts
-verify_field({ fieldId })
-verify_section({ sectionId })
-```
-
-Tool results use semantic evidence:
-
-```ts
-interface ToolResult {
-  callId: string
-  fieldId?: string
-  status: 'verified' | 'ambiguous' | 'rejected' | 'failed' | 'manual'
-  stage: 'mapped' | 'written' | 'committed' | 'verified'
-  evidence: string[]
-  errorClass?: 'semantic' | 'control' | 'validation' | 'stale-ref' | 'safety'
-  retryable: boolean
-}
-```
-
-Evidence never contains full sensitive values.
-
-## 8. Date as an agent tool
-
-Dates are canonical facts, not display strings. The agent chooses `fill_date_from_facts`; it does not manually concatenate values for individual inputs.
-
-The control inspector reports possible shapes:
-
-- one native date/month input;
-- one custom date picker;
-- year + month;
-- year + month + day;
-- start + end inputs;
-- start year/month + end year/month;
-- start/end year/month/day;
-- any of the above plus an ongoing/current toggle.
-
-Part classification uses multiple signals:
-
-- number and order of controls;
-- option domains, such as years or months;
-- placeholder and accessible labels;
-- separators and visual grouping;
-- current/ongoing toggle proximity;
-- component-selected-state changes after inspection.
-
-The LLM selects the semantic tool and, when necessary, confirms the part interpretation. The local date executor validates that interpretation before selecting each year/month/day option. A full range string can never be written into every physical part.
-
-For example, the same profile range can drive all of these layouts:
+下拉成功状态严格定义为：
 
 ```text
-2022-09 ~ 2026-06
-[2022] [09] - [2026] [06]
-[2022-09] - [2026-06]
-[2022] [09] - [ ] [ ] + [current=true]
+open linked overlay
+→ optionally type query
+→ wait options
+→ click matching option
+→ wait component commit
+→ read selected state
 ```
 
-## 9. Select and Portal tools
+只在搜索框出现文字不算 `committed`，更不算 `verified`。多个 Portal 同时存在时，优先通过 `aria-controls` 等关联关系找到当前控件的弹层，不能选择页面最后一个任意弹层。
 
-`select_option_from_fact` is a state machine:
+## 10. 执行与最终读回
 
-1. capture currently visible overlays;
-2. activate one trigger;
-3. associate the new/linked overlay with that trigger;
-4. query or wait for options;
-5. click one validated option;
-6. verify selected state from component output, hidden model state, or overlay-close plus committed value;
-7. close only the overlay opened by this call on failure;
-8. return ambiguous/failed when only search text changed.
+本地执行器按 SemanticPlan 投影真实 Profile 值并操作组件。执行结束后统一重新发现 PageModel，对初步成功项再次读回。
 
-The agent can inspect options and choose a normalization strategy, but it cannot declare success. Only the verifier can.
+状态含义：
 
-## 10. Repeated entries
+- `mapped`：语义计划已确定；
+- `written`：执行过输入或选择动作；
+- `committed`：组件报告已接受状态；
+- `verified`：最终重新扫描后的权威状态与期望一致；
+- `manual`：缺少事实或控件不安全；
+- `failed`：明确写入、提交或读回失败。
 
-Repeated cards are detected through structural similarity, repeated label/control signatures, and add/delete action proximity, not tenant-specific class names.
+只有 `verified` 计入“已填”。
 
-The agent first calls `inspect_entries`, then `ensure_entries` when needed. The gateway validates that each add call increases the count by exactly one. It never exposes delete as an automatic tool.
+## 11. 诊断与统计
 
-Entry routing is explicit:
+Popup 和页面侧栏必须同时显示：
 
-- education page entry N → education fact entry N;
-- merged experience/project page → a local projection supplies a flattened route table;
-- award page entry N → award fact entry N;
-- a second run reuses existing entries and creates zero new cards.
+- 模型请求次数；
+- LLM 复审映射数、规则候选映射数、本地安全决策数；
+- mapped、written、committed、verified；
+- 被拒绝的语义计划数；
+- 自动新增条目数；
+- 每个待确认/失败字段的 mapping 来源、transform、执行阶段和读回消息；
+- 明确的“未保存、未提交”。
 
-## 11. Rules after the redesign
+这使以下问题能被准确归类：
 
-Rules remain valuable, but their role changes:
+- 内容进入错误格子：语义映射问题；
+- 搜索框有文字但未选中：控件提交问题；
+- 日期只写一半：日期投影或部件执行问题；
+- 填到错误卡片：PageModel/EntryRoute 问题；
+- 报告已填但页面为空：最终读回与统计问题。
 
-- produce section, field, and control-shape hypotheses;
-- provide top-N mapping hints with evidence;
-- execute a conservative no-API fallback;
-- short-circuit only deterministic native controls with exact label/type compatibility.
+## 12. 隐私与安全
 
-When the LLM agent is enabled, rules do not write the page before agent planning. The model may accept, replace, or reject every hint.
+- API Key 只存在 background；
+- restricted 事实的真实值不进入模型请求；
+- 真实值由本地 Profile 在执行阶段解析；
+- 原始 HTML、Cookie、Token 和未脱敏快照不发给模型；
+- 保存、下一步、声明确认、提交和投递没有自动执行入口；
+- 缺失开放题或档案事实保持空白；
+- 真实站点测试只填不保存，由用户操作。
 
-## 12. Model protocol and provider compatibility
+## 13. 性能边界
 
-The preferred transport is Chat Completions/Responses-style native function calling with JSON Schema tools.
+- 每次填写最多 1 次语义复审模型请求；
+- 不进行 ReAct 多轮观察/修复；
+- 重复条目和组件信息在请求前一次性准备；
+- 模型返回完整语义计划后，本地批量执行；
+- 请求失败时保留规则候选和本地安全决策；
+- 未来可按字段签名缓存语义结果，但每次执行仍必须重新定位和读回。
 
-The extension must also normalize providers that return tool calls through a strict JSON action envelope. Provider capability is detected during API testing and recorded as:
+## 14. 验收边界
 
-- `native-tools`;
-- `json-tools`;
-- `mapping-only`;
-- `unsupported`.
+当前本地证据：
 
-The agent mode must not be enabled for a provider until a tool-call round trip passes. Mapping-only providers may use the current static planner as a fallback, clearly reported in the UI.
+- 90 个单元测试通过；
+- 生产构建通过；
+- 完整浏览器 E2E 全部断言通过；
+- 单次模型请求、受限身份证本地解析、四段自定义日期、下拉真实选中、重复奖项路由、最终读回和零提交均有测试。
 
-## 13. Budgets and failure policy
-
-- Typical model rounds per page: 2.
-- Maximum repair rounds: 2.
-- Maximum observation calls per ambiguous field: 2.
-- Planning batches: up to 80 fields, at most 3 concurrent model requests.
-- DOM action execution: serialized per frame; only independent native text writes may be grouped.
-- Any incomplete LLM coverage is retried once; remaining fields become manual with an explicit reason.
-- A failed section does not block other sections.
-- A tool call rejected by local validation is reported to the model once and cannot be repeated unchanged.
-
-## 14. UI observability
-
-The panel must show:
-
-- observed sections/entries/fields;
-- rule hints generated;
-- LLM provider capability and model rounds;
-- tool calls proposed, accepted, and rejected;
-- verified, repaired, manual, and failed counts;
-- per-field failure class and final reason;
-- number of entries added;
-- a persistent `not saved / not submitted` indicator.
-
-Users must be able to distinguish “LLM was called” from “LLM produced a valid tool plan.”
-
-## 15. Generalization evaluation
-
-Tests must randomize tenant-specific presentation while preserving semantic structure:
-
-- opaque class names and different nesting depths;
-- compound rows such as document type + number and country code + phone;
-- every supported date layout and option ordering;
-- native, mirrored, searchable, remote, and Portal selects;
-- multiple simultaneously present overlays;
-- zero, one, and several repeated entries;
-- merged and split profile sections;
-- sparse, invalid, timeout, and hallucinated model tool calls;
-- existing non-empty and locked controls;
-- safety-action click counters.
-
-Fixture success is a contract test. A platform is `live-verified` only after the same agent trace passes on a logged-in page with no save or submit action.
-
-## 16. Migration plan
-
-1. **A1 Contracts:** add agent observation, tool call, tool result, and trace types alongside V2.
-2. **A2 Generic capabilities:** implement compound rows, dynamic selects, dates, and repeated-entry inspection without site-specific values.
-3. **A3 Tool gateway:** implement allowlisted local tools and safety validation.
-4. **A4 Agent loop:** implement native/JSON tool calling, mandatory field coverage, and two repair rounds.
-5. **A5 Shadow mode:** run agent planning and tool validation without writes; compare with current V2.
-6. **A6 Controlled rollout:** enable writes on synthetic fixtures, then Moka, Dayee WT, and Kuma live gates.
-7. **A7 Remove static default:** only after agent-mode live acceptance, retire rule-first platform defaults.
-
-Until A6 passes, the current V2 must not be described as a generalized agent.
+fixture 通过不等于真实站点通过。知乎 Moka、阿里 Kuma 和中国电信 Dayee WT 只有在用户登录后的真实页面完成一次只填不保存验收后，才能从 `fixture-verified` 升级为 `live-verified`。

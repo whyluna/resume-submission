@@ -59,9 +59,9 @@ export function SettingsTab() {
       <div className="field">
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
           <input type="checkbox" checked={s.agentMode} onChange={(e) => set('agentMode', e.target.checked)} />
-          LLM Agent 主导填写（规则仅作提示，失败后按页面读回结果修复；推荐）
+          混合语义填写（规则候选 + 单次 LLM 全量复审 + 本地执行读回；推荐）
         </label>
-        <span className="note">需要已配置的大模型 API。关闭后使用 V2/旧规则降级路径。</span>
+        <span className="note">未配置 API 时仍使用规则候选和同一本地执行器；关闭后才使用 V2/旧规则路径。</span>
       </div>
       <div className="field">
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>

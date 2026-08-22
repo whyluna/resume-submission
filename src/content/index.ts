@@ -53,7 +53,7 @@ if (!window.__rsAutofillInjected) {
       fillCurrent().then(sendResponse).catch((e) => {
         const message = (e as Error).message
         setStatus(`填写中断：${message}`)
-        sendResponse(failedSummary(message, '填写 Agent'))
+        sendResponse(failedSummary(message, '混合语义填写'))
       })
       return true
     }
@@ -127,7 +127,7 @@ async function fillWithAgent(): Promise<FillSummary> {
   const initialModel = discoverPageModel(document, location.href)
   const fieldCount = initialModel.sections.reduce((total, section) => total + section.fields.length
     + section.entries.reduce((sum, entry) => sum + entry.fields.length, 0), 0)
-  if (fieldCount === 0) throw new Error('Agent 未观察到可填写字段；请先运行“仅扫描表单”查看诊断')
+  if (fieldCount === 0) throw new Error('混合语义链路未观察到可填写字段；请先运行“仅扫描表单”查看诊断')
   const profile = projectProfileForPage(stored, initialModel)
   setStatus(`混合语义 Agent：已观察 ${initialModel.sections.length} 个分区、${fieldCount} 个字段…`)
   const report = await runSemanticOnce(initialModel, profile, settings.privacyMode, requestOneShotReview, document, setStatus)

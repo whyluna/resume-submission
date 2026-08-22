@@ -1,6 +1,6 @@
 # 通用校招简历自动填写开发计划
 
-> 版本：v0.3
+> 版本：v0.4
 > 日期：2026-08-22
 > 对应需求：`REQUIREMENTS.md`
 > 实施原则：先建立正确结构与可观测性，再扩展平台；每个平台必须经过真实页面只填不保存验收
@@ -12,11 +12,12 @@
 ```text
 页面采集
   → PageModel（分区/条目/语义字段/控件组/动作）
-  → Profile Fact Catalog + 规则提示
-  → LLM Agent 选择白名单语义工具
-  → 本地 Tool Gateway 校验与执行
-  → 页面 authoritative readback
-  → 失败/歧义结果返回 LLM 有界修复
+  → 本地补齐重复条目 + EntryRoute
+  → 脱敏 FormPageIR + Profile Facts + 规则 top-N
+  → 一次 LLM 全页面语义复审
+  → 本地 path/entry/type/transform 双重校验
+  → 本地适配器执行
+  → 最终重新扫描和 authoritative readback
   → 终态诊断报告
 ```
 
@@ -35,6 +36,7 @@
 8. 第一批平台顺序：核心引擎 → Moka → DayeeWT → Kuma → Beisen。
 9. 北森在获得登录后真实脱敏结构前不进入“已支持”列表。
 10. 真实简历和未脱敏 DOM 快照不得进入仓库。
+11. 单次填写最多进行一次语义复审模型请求，不采用多轮 ReAct 浏览器循环。
 
 ## 3. 迁移策略
 
@@ -111,17 +113,17 @@ src/
 | M7 | Beisen 与通用长尾 | 北森真实样本通过，Generic 能安全降级 |
 | M8 | 产品化与发布 | 隐私审计、性能、文档和回归矩阵完成 |
 
-### 4.1 LLM Agent 迁移进度
+### 4.1 混合语义链路进度
 
-| Agent 阶段 | 当前状态 | 已有证据 |
+| 阶段 | 当前状态 | 已有证据 |
 |---|---|---|
-| A1 合同 | 已完成 | 事实引用、工具调用、结果、trace、严格运行时白名单 |
-| A2 通用能力 | 进行中 | 复合行、同标签/共同容器日期组已实现；更多动态组件待扩展 |
-| A3 工具网关 | 已完成 | 文本、枚举、日期、布尔、条目、检查、复验；无保存/提交工具 |
-| A4 Agent 循环 | 已完成 beta | 最多 3 轮 plan/act/readback/repair，漏项最终转人工 |
-| A5 影子与 E2E | 已完成最小闭环 | 真实扩展消息链 4 工具验证，提交按钮零点击 |
-| A6 实页灰度 | 扫描通过、填写待确认 | 知乎只读扫描从 15 个伪分区/108 字段收敛为 10 个真实分区/38 个语义字段；阿里、中国电信及知乎填写仍待只填不保存验收 |
-| A7 移除静态默认 | 未开始 | 仅在 A6 通过后执行 |
+| H1 FormPageIR | 已完成 | 脱敏组件 HTML、日期槽位、下拉交互、禁止动作 |
+| H2 EntryRoute | 已完成 | 启用条目原始下标、实习/项目合并路由、奖项不重复 |
+| H3 规则 top-N | 已完成 | 规则只生成候选，不先写页面 |
+| H4 单次 LLM 全量复审 | 已完成 | 1 次请求；keep/replace/fill/manual/skip；无 ToolCall |
+| H5 本地执行与最终读回 | 已完成 | 下拉真实点击、四段日期、最终重新扫描；仅 verified 计已填 |
+| H6 分层诊断 | 已完成 | 模型/规则来源与 mapped/written/committed/verified 分开 |
+| H7 实页灰度 | 待用户测试 | 知乎、阿里、中国电信仍待只填不保存验收 |
 
 ## 5. M0：冻结基线并建立红测
 
@@ -230,16 +232,16 @@ src/
 
 ### 7.3 LLM 规划器
 
-- [x] 按分区构造请求；
-- [x] 每个请求携带 entryId、fieldId、controlKind、选项和规则候选；
+- [x] 构造一次完整、脱敏的 FormPageIR 请求；
+- [x] 请求携带 entryRoute、组件结构、日期槽位、controlKind、选项和规则 top-N；
 - [x] 启用 API 时复审全部 eligible 字段；
 - [ ] 输出严格 JSON Schema；
 - [x] 支持 keep-rule/replace-rule/fill/manual/skip；
 - [x] 支持选择白名单 transform；
-- [ ] 校验 path、条目下标、类型和敏感策略；
-- [x] 某分区失败时继续其他分区；
+- [x] background 与 content 双重校验 path、条目下标、类型和敏感策略；
+- [x] 模型漏项/单项失败时仅该字段回退规则或 manual；
 - [ ] 缓存同站点字段签名对应的语义计划；
-- [ ] 记录 LLM 输入字段数量、输出决策和被本地拒绝的原因。
+- [x] 记录模型请求数、模型/规则决策和被本地拒绝的原因。
 
 ### 7.4 隐私
 
@@ -262,7 +264,7 @@ src/
 ### 8.1 文本与富文本
 
 - [x] React/Vue/Angular 受控输入使用原生 setter 和 input/change/blur 事件；
-- [ ] 写入后等待框架渲染并重新定位；
+- [x] 执行结束后重新发现 PageModel 并最终读回；
 - [x] maxlength 截断必须标记 manual review；
 - [x] 富文本读取编辑器实际内容，不只读输入值前缀；
 - [x] disabled 字段直接跳过。
@@ -432,7 +434,7 @@ src/
 
 - [ ] 按分区懒扫描；
 - [ ] Portal/MutationObserver 限定作用域；
-- [x] 小分区合并至每批最多 80 字段，最多 3 批并发；单批 60 秒超时后回退规则；
+- [x] 每次填写最多 1 次全页面语义请求，75 秒超时后保留规则候选和安全决策；
 - [ ] 语义计划缓存按适配器版本失效；
 - [ ] 不因全页 MutationObserver 持续占用 CPU。
 
@@ -499,7 +501,7 @@ src/
 |---|---|
 | 站点改版 | 结构签名失效后降级 manual；采集器快速生成新 fixture |
 | LLM 幻觉 | path/entry/transform 白名单校验，缺失值禁止生成 |
-| LLM 成本和延迟 | 分区批次、字段签名缓存、规则候选压缩 |
+| LLM 成本和延迟 | 单次压缩 FormPageIR、字段签名缓存、规则候选裁剪 |
 | 自定义组件未真正提交 | authoritative readback，输入文字不算成功 |
 | 误建重复条目 | 直接识别 entry container，二次运行幂等测试 |
 | 超长银行/国企表单 | 按分区处理，不设全页前60项硬截断 |
@@ -534,60 +536,60 @@ src/
 
 该切片通过后，再把同一核心模型扩展到 DayeeWT 和 Kuma，不先并行堆叠三个独立实现。
 
-## 18. M9：LLM-First Agent 重构
+## 18. M9：混合语义 Agent 重构
 
-详细架构见 [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)。本阶段取代继续堆叠站点特例。
+详细架构见 [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)。本阶段不再采用多轮 ReAct/ToolCall 作为生产入口。
 
-### 18.1 A1 Agent 合同
+### 18.1 H1 组件 IR 与路由
 
-- [ ] AgentField / AgentControlGroup / AgentFact；
-- [ ] ToolCall / ToolResult / AgentTrace；
-- [ ] provider capability：native-tools / json-tools / mapping-only；
-- [ ] 每字段强制终态和漏项检测；
-- [ ] 保存/下一步/提交工具不存在的类型级断言。
+- [x] 脱敏 FormPageIR 和白名单组件 HTML；
+- [x] 复合表单行、日期槽位和下拉交互类型；
+- [x] 页面条目到 Profile 原始数组下标的 EntryRoute；
+- [x] 实习/项目合并分区路由；
+- [x] 奖项、教育、项目多条目不重复；
+- [x] 保存/下一步/提交动作只记录为 forbidden。
 
-### 18.2 A2 通用观察能力
+### 18.2 H2 规则候选 + 单次 LLM 复审
 
-- [ ] 复合表单行拆分；
-- [ ] 单日期、年月、年月日、区间、四段/六段日期和 current toggle；
-- [ ] 动态 Portal 与 trigger 关联；
-- [ ] 结构相似重复条目发现；
-- [ ] 合并分区本地 route table；
-- [ ] opaque class 和随机嵌套 fixture。
+- [x] 每字段生成 top-N 规则候选，不先写页面；
+- [x] 一次请求复审全页面所有字段；
+- [x] 模型只返回 fieldId/profilePaths/transform/decision；
+- [x] 标准字段、长尾字段和规则已匹配项都进入复审；
+- [x] 模型漏项或单项失败时仅该字段本地回退；
+- [x] 生产 background 不暴露多轮工具调用消息路由。
 
-### 18.3 A3 语义工具网关
+### 18.3 H3 本地双重校验
 
-- [ ] inspect_section / inspect_control / inspect_options / inspect_entries；
-- [ ] fill_text_from_fact；
-- [ ] select_option_from_fact；
-- [ ] fill_date_from_facts；
-- [ ] set_boolean_from_fact；
-- [ ] ensure_entries；
-- [ ] verify_field / verify_section；
-- [ ] 所有工具本地路径、类型、敏感和动作安全校验。
+- [x] path、fieldId、entryRoute、transform 白名单；
+- [x] 固定下拉只接受枚举事实；
+- [x] restricted 事实禁止进入选择控件；
+- [x] 证件类型/证件号码复合结构防颠倒；
+- [x] 日期事实类型与单值/区间形态校验；
+- [x] background 和 content 两侧分别校验。
 
-### 18.4 A4 Agent 循环
+### 18.4 H4 本地组件执行
 
-- [ ] 首轮批量工具计划；
-- [ ] 工具执行结果回传；
-- [ ] 最多两轮 repair；
-- [ ] 缺失字段重试一次后 manual；
-- [ ] provider native tool calling 与 JSON tool envelope 兼容；
-- [ ] 典型页面不超过两轮模型调用。
+- [x] 文本使用原生 setter 和框架事件；
+- [x] 搜索下拉必须打开关联 Portal、点击选项并读已选状态；
+- [x] 四段/六段日期逐槽选择，完整区间不会重复写进各槽；
+- [x] 重复条目在模型请求前本地补齐并验证数量；
+- [x] 执行完成后最终重新发现 PageModel 并读回；
+- [x] 自动保存/下一步/提交点击次数为零。
 
-### 18.5 A5 可观察性和 shadow mode
+### 18.5 H5 可观察性
 
-- [ ] 规则 hints、LLM calls、tool calls、rejections、repairs 分开显示；
-- [ ] Agent shadow mode 不写页面；
-- [ ] 与当前 V2 对比 mapped/verified/错误类型；
-- [ ] 报告不包含完整敏感值。
+- [x] 模型请求次数；
+- [x] LLM 复审、规则候选和本地安全决策分别统计；
+- [x] mapped/written/committed/verified 分层统计；
+- [x] 失败项显示语义来源、transform、执行阶段和读回原因；
+- [x] 报告不包含完整敏感值。
 
-### 18.6 A6 泛化验收
+### 18.6 H6 泛化与实页验收
 
-- [ ] 随机 class/嵌套深度；
-- [ ] 复合证件与电话行；
-- [ ] 日期形态组合矩阵；
-- [ ] 多 Portal 并存和失败清理；
-- [ ] 奖项/教育/项目多条目无重复；
-- [ ] Moka、Dayee WT、Kuma 分别通过 live gate；
-- [ ] 全部保存/提交动作零点击。
+- [x] opaque class、复合证件、四段日期、自定义 Portal 和重复奖项 fixture；
+- [x] 90 个单元测试、生产构建和完整浏览器 E2E；
+- [ ] 知乎 Moka 真实页只填不保存；
+- [ ] 阿里 Kuma 真实页只填不保存；
+- [ ] 中国电信 Dayee WT 真实页只填不保存；
+- [ ] 取得北森登录后脱敏样本并补充验收；
+- [ ] 真实测试结果回灌脱敏 fixture，达到 live-verified 门槛。

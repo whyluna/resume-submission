@@ -1,9 +1,8 @@
-import type { AgentRoundResponse, ExtMessage, GetStateRes, LlmTestRes, OneShotSemanticResponse, SemanticPlannerResponse } from '@/shared/types'
+import type { ExtMessage, GetStateRes, LlmTestRes, OneShotSemanticResponse, SemanticPlannerResponse } from '@/shared/types'
 import { detectSite } from '@/shared/siteDetect'
 import { getActiveProfile, getSettings } from '@/shared/storage'
 import { extractProfile, matchFields } from './llm'
 import { planPageSemantics } from './llmPlanner'
-import { planAgentRound } from './agentPlanner'
 import { projectProfileForPage } from '@/shared/profileProjection'
 import { reviewPageOneShot } from './oneShotSemanticPlanner'
 
@@ -42,13 +41,6 @@ chrome.runtime.onMessage.addListener((msg: ExtMessage, _sender, sendResponse) =>
     } satisfies SemanticPlannerResponse))
     return true
   }
-  if (msg.type === 'LLM_AGENT_ROUND') {
-    handleAgentRound(msg).then(sendResponse).catch((error) => sendResponse({
-      ok: false, calls: [], coveredFieldIds: [], missingFieldIds: msg.targetFieldIds,
-      rejected: [], observationFieldCount: 0, error: `Agent 后台异常：${(error as Error).message}`,
-    } satisfies AgentRoundResponse))
-    return true
-  }
   if (msg.type === 'LLM_REVIEW_ONESHOT') {
     getSettings().then((settings) => reviewPageOneShot(msg.ir, settings)).then(sendResponse).catch((error) => sendResponse({
       ok: false, plan: [], modelRequestCount: 0, modelDecisions: 0, ruleDecisions: 0, manualDecisions: 0,
@@ -67,30 +59,6 @@ async function handlePlanPage(model: Parameters<typeof planPageSemantics>[0]): P
     return { ok: true, plan: planned.accepted, rejected: planned.rejected.length, messages: planned.messages }
   } catch (error) {
     return { ok: false, plan: [], rejected: 0, messages: [], error: (error as Error).message }
-  }
-}
-
-async function handleAgentRound(msg: Extract<ExtMessage, { type: 'LLM_AGENT_ROUND' }>): Promise<AgentRoundResponse> {
-  const [stored, settings] = await Promise.all([getActiveProfile(), getSettings()])
-  if (!stored) return {
-    ok: false, calls: [], coveredFieldIds: [], missingFieldIds: msg.targetFieldIds,
-    rejected: [], observationFieldCount: 0, error: '没有可用简历档案',
-  }
-  const profile = projectProfileForPage(stored, msg.model)
-  const planned = await planAgentRound(msg.model, profile, settings, {
-    round: msg.round,
-    targetFieldIds: msg.targetFieldIds,
-    previousResults: msg.previousResults,
-    previousIssues: msg.previousIssues,
-  })
-  return {
-    ok: true,
-    calls: planned.calls,
-    coveredFieldIds: planned.coveredFieldIds,
-    missingFieldIds: planned.missingFieldIds,
-    rejected: planned.rejected.map((item) => item.reason),
-    trace: planned.trace,
-    observationFieldCount: planned.observationFieldCount,
   }
 }
 
