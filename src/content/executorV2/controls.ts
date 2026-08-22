@@ -69,7 +69,7 @@ function overlayFor(root: Element, doc: Document): Element | null {
   }
   const candidates = Array.from(doc.querySelectorAll([
     '[role="listbox"]', '.ant-select-dropdown', '.el-select-dropdown', '.arco-select-popup',
-    '.kuma-select2-dropdown', '.select2-dropdown', '[class*="dropdown-menu"]',
+    '.kuma-select2-dropdown', '.select2-dropdown', '.moka-search-dropdown', '[class*="dropdown-menu"]',
   ].join(','))).filter(visible)
   return candidates.at(-1) ?? null
 }
@@ -174,8 +174,20 @@ async function executeDateRange(request: ControlExecutionRequest, value: string,
   const expected: Partial<Record<ControlPartRole, string>> = { start: range.start, end: range.end, 'current-toggle': range.current ? '是' : '否' }
   const parts = group.parts.filter((part) => part.role in expected)
   if (parts.length < 2) return result(request.field.id, { failureClass: 'control', message: '日期区间缺少起止控件' })
-  const written = parts.every((part) => writeDatePart(part, expected[part.role] ?? '', doc))
-  const verified = written && parts.every((part) => readDatePart(part, expected[part.role] ?? '', doc))
+  const dateParts = parts.filter((part) => part.role !== 'current-toggle')
+  const toggle = parts.find((part) => part.role === 'current-toggle')
+  const writtenDates = dateParts.every((part) => writeDatePart(part, expected[part.role] ?? '', doc))
+  const writtenToggle = !toggle || writeDatePart(toggle, expected['current-toggle'] ?? '否', doc)
+  const written = writtenDates && writtenToggle
+  const verifiedDates = dateParts.every((part) => {
+    if (range.current && part.role === 'end') {
+      const el = resolveElement(part.ref, doc)
+      const actual = el instanceof HTMLInputElement ? el.value : ''
+      return actual === '' || /至今|现在|在读|在职|进行中/.test(actual)
+    }
+    return readDatePart(part, expected[part.role] ?? '', doc)
+  })
+  const verified = written && verifiedDates && (!toggle || readDatePart(toggle, expected['current-toggle'] ?? '否', doc))
   return verified
     ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期区间已逐项读回' })
     : result(request.field.id, { written, committed: written, failureClass: 'control', message: '日期区间写入或读回失败' })
@@ -195,6 +207,13 @@ export async function executeControl(request: ControlExecutionRequest, doc: Docu
 
   if (group.kind === 'custom-select' || group.kind === 'combobox') return chooseCustom(request.field.id, group, value, doc)
   if (group.kind === 'date-range') return executeDateRange(request, value, doc)
+  if (group.kind === 'date-single') {
+    const input = partElement(group, 'input', doc) ?? root
+    const write = writeText(input, value)
+    return write.written && write.actual === value
+      ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期已写入并读回' })
+      : result(request.field.id, { written: write.written, failureClass: 'control', message: '日期写入后读回不一致' })
+  }
   if (group.kind === 'radio-group') {
     const verified = chooseRadio(group, value, doc)
     return verified

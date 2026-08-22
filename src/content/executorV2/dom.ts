@@ -37,6 +37,9 @@ export function selectedText(root: Element): string {
     '.arco-select-view-value', '.kuma-select2-selection-rendered', '.selected-label',
   ].join(','))
   if (selected?.textContent?.trim()) return selected.textContent.trim()
+  const dataValue = (root as HTMLElement).dataset?.value
+    || (root.querySelector('input') as HTMLInputElement | null)?.dataset.value
+  if (dataValue?.trim()) return dataValue.trim()
   if (root instanceof HTMLSelectElement) return root.selectedOptions[0]?.textContent?.trim() ?? root.value
   return ''
 }

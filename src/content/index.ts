@@ -11,6 +11,9 @@ import { renderSummary, setStatus } from './panel'
 import { llmReviewFields, type ReviewField } from './llmFallback'
 import { discoverPageModel } from './discover/pageModel'
 import { executeSemanticPlan } from './executorV2/executePlan'
+import { prepareRepeatEntries } from './adapters/repeatEntries'
+import { resolveElement } from './executorV2/dom'
+import { projectProfileForPage } from '@/shared/profileProjection'
 
 declare const window: Window & { __rsAutofillInjected?: boolean }
 if (!window.__rsAutofillInjected) {
@@ -31,29 +34,116 @@ if (!window.__rsAutofillInjected) {
       return
     }
     if (msg.type === 'CONTENT_FILL') {
-      fillAll().then(sendResponse).catch((e) => {
-        setStatus(`填写中断：${(e as Error).message}`)
+      const useV2 = discoverPageModel(document, location.href).adapterId === 'moka'
+      ;(useV2 ? fillMokaV2() : fillAll()).then(sendResponse).catch((e) => {
+        const message = (e as Error).message
+        setStatus(`填写中断：${message}`)
+        sendResponse(failedSummary(message, useV2 ? 'Moka V2' : 'legacy'))
       })
       return true
     }
     if (msg.type === 'CONTENT_FILL_V2') {
-      fillAllV2().then(sendResponse).catch((e) => setStatus(`V2 填写中断：${(e as Error).message}`))
+      fillAllV2().then(sendResponse).catch((e) => {
+        const message = (e as Error).message
+        setStatus(`V2 填写中断：${message}`)
+        sendResponse({ total: 1, verified: 0, manual: 0, failed: 1, results: [], error: message })
+      })
       return true
     }
   })
+}
+
+function failedSummary(message: string, siteName: string): FillSummary {
+  return {
+    totalFields: 1, filled: 0, review: 0, failed: 1, unmatched: 0, manual: 0,
+    items: [{
+      fieldRef: { cssPath: '', index: 0 }, sectionKey: 'unknown', profilePath: '', label: '执行流程', value: '',
+      confidence: 0, via: 'rule', reason: message, status: 'failed', error: message,
+    }],
+    siteName,
+    at: Date.now(),
+  }
 }
 
 async function fillAllV2() {
   const profile = await getActiveProfile()
   if (!profile) throw new Error('还没有简历档案，请先在设置页创建')
   setStatus('V2：正在构建页面模型并进行全分区规划…')
-  const model = discoverPageModel(document, location.href)
-  const planned = await chrome.runtime.sendMessage({ type: 'LLM_PLAN_PAGE', model } satisfies ExtMessage) as SemanticPlannerResponse
+  let model = discoverPageModel(document, location.href)
+  if (model.adapterId === 'moka') model = (await prepareRepeatEntries(model, profile, document)).model
+  const planned = await requestPagePlan(model)
   if (!planned.ok) throw new Error(planned.error || '语义规划失败')
   setStatus(`V2：执行 ${planned.plan.length} 个计划项，只统计读回成功项…`)
   const report = await executeSemanticPlan(model, profile, planned.plan, document)
   setStatus(`V2：已验证 ${report.verified}，人工 ${report.manual}，失败 ${report.failed}；页面尚未保存/提交`)
   return { ...report, plannerMessages: planned.messages, rejectedPlans: planned.rejected }
+}
+
+async function requestPagePlan(model: ReturnType<typeof discoverPageModel>): Promise<SemanticPlannerResponse> {
+  const message = { type: 'LLM_PLAN_PAGE', model } satisfies ExtMessage
+  let response = await chrome.runtime.sendMessage(message) as SemanticPlannerResponse | undefined
+  if (!response) {
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    response = await chrome.runtime.sendMessage(message) as SemanticPlannerResponse | undefined
+  }
+  return response ?? { ok: false, plan: [], rejected: 0, messages: [], error: '规划后台连续两次未响应，请刷新页面后重试' }
+}
+
+async function fillMokaV2(): Promise<FillSummary> {
+  const stored = await getActiveProfile()
+  if (!stored) throw new Error('还没有简历档案，请先在设置页创建')
+  let model = discoverPageModel(document, location.href)
+  const profile = projectProfileForPage(stored, model)
+  const prepared = await prepareRepeatEntries(model, profile, document)
+  model = prepared.model
+  setStatus(`Moka V2：全分区规划 ${model.sections.length} 个分区…`)
+  const planned = await requestPagePlan(model)
+  if (!planned.ok) throw new Error(planned.error || '语义规划失败')
+  // Background 使用存储档案规划；Moka 的论文→项目投影在本地补一轮规则候选执行。
+  const report = await executeSemanticPlan(model, profile, planned.plan, document)
+  const fields = new Map(model.sections.flatMap((section) => [
+    ...section.fields,
+    ...section.entries.flatMap((entry) => entry.fields),
+  ]).map((field) => [field.id, field]))
+  const planByField = new Map(planned.plan.map((item) => [item.fieldId, item]))
+  const items: FillResultItem[] = report.results.map((item) => {
+    const field = fields.get(item.fieldId)
+    const plan = planByField.get(item.fieldId)
+    const root = field ? resolveElement(field.control.root, document) : null
+    if (root) highlight(root, item.verified ? 'filled' : item.state === 'manual' ? 'review' : 'failed')
+    const via = plan?.decision === 'keep-rule' ? 'rule' : 'llm'
+    const phaseReason = via === 'llm'
+      ? `LLM ${plan?.decision === 'replace-rule' ? '纠正' : '补填'}：${plan?.reason || '语义规划'}；${item.message}`
+      : `规则候选：${plan?.reason || '匹配'}；${item.message}`
+    return {
+      fieldRef: { cssPath: field?.control.root.cssPath ?? '', index: field?.control.root.index ?? 0 },
+      sectionKey: (model.sections.find((section) => section.fields.some((candidate) => candidate.id === item.fieldId)
+        || section.entries.some((entry) => entry.fields.some((candidate) => candidate.id === item.fieldId)))?.semanticCandidates[0] ?? 'unknown'),
+      profilePath: plan?.profilePaths[0] ?? '',
+      label: field?.signals.label || field?.signals.placeholder || '未命名字段',
+      value: '',
+      confidence: plan?.confidence ?? 0,
+      via,
+      reason: phaseReason,
+      status: item.verified ? 'filled' : item.state === 'manual' ? 'review' : 'failed',
+      ...(item.state === 'failed' ? { error: item.message } : {}),
+    }
+  })
+  const fieldCount = fields.size
+  const summary: FillSummary = {
+    totalFields: report.total,
+    filled: report.verified,
+    review: report.manual,
+    failed: report.failed,
+    unmatched: Math.max(0, fieldCount - planned.plan.length),
+    manual: report.manual,
+    items,
+    siteName: `Moka V2（已添加 ${prepared.added} 条；未保存/未提交）`,
+    at: Date.now(),
+  }
+  setStatus(`Moka V2：已验证 ${summary.filled}，待确认 ${summary.review}，失败 ${summary.failed}；未保存/未提交`)
+  renderSummary(summary)
+  return summary
 }
 
 // ---------------- 填写编排 ----------------

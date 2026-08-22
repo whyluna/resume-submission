@@ -1,10 +1,11 @@
 import type {
   ActionSafety, ControlGroup, ControlGroupKind, ControlPart, ControlPartRole, ElementRefV2,
-  PageAction, PageActionKind, PageEntry, PageField, PageModel, PageSection, SemanticSignalsV2,
+  AdapterId, PageAction, PageActionKind, PageEntry, PageField, PageModel, PageSection, SemanticSignalsV2,
 } from '@/shared/pageModel'
 import type { SectionKey } from '@/shared/types'
 import { cssPath, hashSig, norm } from '@/shared/util'
 import { detectAdapter } from '../adapters/detect'
+import { MOKA, mokaAdapter } from '../adapters/moka'
 
 const CONTROL_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
 const NAV_SELECTOR = 'nav, aside, [role="navigation"], [role="menu"], [role="tablist"], [class*="sidebar"], [class*="side-nav"], [class*="step"]'
@@ -107,7 +108,10 @@ function directTextCandidates(fieldEl: Element): string[] {
 
 function signalsFor(el: Element, sectionTitle: string): SemanticSignalsV2 {
   const input = el as HTMLInputElement
-  const near = directTextCandidates(el)
+  const row = el.closest('.form-item, .semantic-row, [class*="formItem"], [class*="form-item"]')
+  const rowLabel = cleanText(row?.querySelector('.form-label, .semantic-label, [class*="formLabel"], [class*="field-label"]')?.textContent)
+  const discovered = directTextCandidates(el)
+  const near = rowLabel ? [rowLabel, ...discovered.filter((value) => value !== rowLabel)] : discovered
   return {
     label: near[0] ?? '',
     labelNear: near.slice(1, 6),
@@ -151,6 +155,12 @@ function makeGroup(kind: ControlGroupKind, root: Element, controls: Element[], p
   const required = controls.some((el) => (el as HTMLInputElement).required || el.getAttribute('aria-required') === 'true')
   const disabled = controls.some((el) => (el as HTMLInputElement).disabled)
   const readOnly = controls.every((el) => !(el instanceof HTMLInputElement) || el.readOnly)
+  let currentState = stateOf(controls)
+  if (currentState === 'empty') {
+    const selected = root.querySelector('[aria-selected="true"], .ant-select-selection-item, .el-select__selected-item, .selected-label')
+    const dataValue = (root as HTMLElement).dataset?.value
+    if (cleanText(selected?.textContent) || cleanText(dataValue)) currentState = 'non-empty'
+  }
   return {
     id: `control_${makeRef(root).signature}`,
     kind,
@@ -160,12 +170,12 @@ function makeGroup(kind: ControlGroupKind, root: Element, controls: Element[], p
     required,
     disabled,
     readOnly,
-    currentState: stateOf(controls),
+    currentState,
     commitStrategy: strategy,
   }
 }
 
-function detectControl(el: Element): DetectedControl | null {
+function detectControl(el: Element, adapterId: AdapterId): DetectedControl | null {
   const kumaDate = el.closest('.kuma-date-uxform-field-cascade')
   if (kumaDate) {
     const inputs = Array.from(kumaDate.querySelectorAll('input')).filter(isVisible)
@@ -195,6 +205,40 @@ function detectControl(el: Element): DetectedControl | null {
         ], 'moka-date-parts'),
         signalElement: inputs[0],
       }
+    }
+  }
+
+  const mokaPicker = adapterId === 'moka' ? el.closest('.ant-picker') : null
+  if (mokaPicker) {
+    const inputs = Array.from(mokaPicker.querySelectorAll<HTMLInputElement>('input')).filter(isVisible)
+    const row = mokaPicker.parentElement
+    const current = row && Array.from(row.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find((checkbox) => /至今|在读|在职|进行中/.test(cleanText(checkbox.closest('label')?.textContent)))
+    if (inputs.length >= 2) {
+      return {
+        identity: mokaPicker,
+        group: makeGroup('date-range', mokaPicker, current ? [...inputs, current] : inputs, [
+          part('start', inputs[0]), part('end', inputs[1]), ...(current ? [part('current-toggle', current)] : []),
+        ], 'moka-ant-picker-range'),
+        signalElement: inputs[0],
+      }
+    }
+    if (inputs.length === 1) {
+      return {
+        identity: mokaPicker,
+        group: makeGroup('date-single', mokaPicker, inputs, [part('input', inputs[0])], 'moka-ant-picker-single'),
+        signalElement: inputs[0],
+      }
+    }
+  }
+
+  const mokaSearchInput = adapterId === 'moka' && el.matches(MOKA.searchInputSelector)
+  if (mokaSearchInput) {
+    const root = el.closest(MOKA.searchRootSelector) ?? el.parentElement ?? el
+    return {
+      identity: root,
+      group: makeGroup('combobox', root, [el], [part('root', root), part('trigger', el), part('input', el)], 'moka-remote-search'),
+      signalElement: el,
     }
   }
 
@@ -268,7 +312,7 @@ function detectControl(el: Element): DetectedControl | null {
   if (el instanceof HTMLInputElement && el.type === 'checkbox') {
     const labelText = cleanText(el.closest('label')?.textContent)
     const owner = el.parentElement?.parentElement
-    if (/至今|在读|在职|进行中/.test(labelText) && owner?.querySelector('.moka-date-parts')) return null
+    if (/至今|在读|在职|进行中/.test(labelText) && owner?.querySelector('.moka-date-parts, .ant-picker')) return null
     return {
       identity: el,
       group: makeGroup('checkbox', el, [el], [part('input', el)], 'checkbox-click'),
@@ -310,12 +354,12 @@ function detectControl(el: Element): DetectedControl | null {
   return null
 }
 
-function discoverFields(root: Element, sectionTitle: string): PageField[] {
+function discoverFields(root: Element, sectionTitle: string, adapterId: AdapterId): PageField[] {
   const seen = new Set<Element>()
   const fields: PageField[] = []
   for (const el of Array.from(root.querySelectorAll(CONTROL_SELECTOR))) {
     if (!isVisible(el)) continue
-    const detected = detectControl(el)
+    const detected = detectControl(el, adapterId)
     if (!detected || seen.has(detected.identity)) continue
     seen.add(detected.identity)
     const signals = signalsFor(detected.signalElement, sectionTitle)
@@ -382,8 +426,11 @@ export function discoverPageModel(doc: Document = document, url: string = locati
   const discovered = discoverSections(doc)
   const sectionRoots = new Set(discovered.map((section) => section.root))
   const sections: PageSection[] = discovered.map((section) => {
-    const roots = entryRoots(section.root)
     const repeat = section.semanticCandidates.some((candidate) => REPEAT_SECTIONS.has(candidate))
+    const explicitRoots = entryRoots(section.root)
+    const roots = repeat && explicitRoots.length === 0 && section.root.querySelector(CONTROL_SELECTOR)
+      ? [section.root]
+      : explicitRoots
     const entries: PageEntry[] = roots.map((root, index) => {
       const ref = makeRef(root)
       return {
@@ -391,7 +438,7 @@ export function discoverPageModel(doc: Document = document, url: string = locati
         index,
         root: ref,
         kindCandidates: section.semanticCandidates,
-        fields: discoverFields(root, section.title),
+        fields: discoverFields(root, section.title, adapter.id),
       }
     })
     const sectionRef = makeRef(section.root)
@@ -401,7 +448,7 @@ export function discoverPageModel(doc: Document = document, url: string = locati
       root: sectionRef,
       semanticCandidates: section.semanticCandidates,
       entries,
-      fields: roots.length > 0 || repeat ? [] : discoverFields(section.root, section.title),
+      fields: roots.length > 0 || repeat ? [] : discoverFields(section.root, section.title, adapter.id),
       actions: actionCandidates(section.root),
     }
   })
@@ -418,7 +465,7 @@ export function discoverPageModel(doc: Document = document, url: string = locati
     title: doc.title,
     capturedAt: Date.now(),
     adapterId: adapter.id,
-    adapterMaturity: 'research',
+    adapterMaturity: adapter.id === 'moka' ? mokaAdapter.maturity : 'research',
     sections,
     globalActions,
   }

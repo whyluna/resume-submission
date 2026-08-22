@@ -13,12 +13,14 @@ export function norm(s: string | null | undefined): string {
 export function cssPath(el: Element): string {
   const parts: string[] = []
   let cur: Element | null = el
+  let anchoredById = false
   while (cur && cur !== document.body && cur !== document.documentElement) {
     const parent: Element | null = cur.parentElement
     if (!parent) break
     let selector = cur.tagName.toLowerCase()
     if (cur.id && /^[A-Za-z][\w-]*$/.test(cur.id)) {
       parts.unshift(`#${cur.id}`)
+      anchoredById = true
       break
     }
     const sameTag = Array.from(parent.children).filter((c) => c.tagName === cur!.tagName)
@@ -26,7 +28,7 @@ export function cssPath(el: Element): string {
     parts.unshift(selector)
     cur = parent
   }
-  return 'body>' + parts.join('>')
+  return (anchoredById ? '' : 'body>') + parts.join('>')
 }
 
 /** djb2 哈希，用于字段 signature */

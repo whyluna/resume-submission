@@ -57,6 +57,38 @@ function buildReviewPlan(prompt) {
   return plan
 }
 
+function buildV2Plan(prompt) {
+  const payload = JSON.parse(prompt)
+  return (payload.batch?.fields ?? []).flatMap((field) => {
+    if (field.label === '职责' && Number.isInteger(field.entryIndex)) return [{
+      fieldId: field.fieldId,
+      decision: 'replace-rule',
+      profilePaths: [`projects[${field.entryIndex}].description`],
+      transform: 'identity',
+      confidence: 0.9,
+      reason: '职责使用项目描述',
+    }]
+    const rule = field.ruleCandidates?.[0]
+    if (rule) return [{
+      fieldId: field.fieldId,
+      decision: 'keep-rule',
+      profilePaths: [rule.profilePath],
+      transform: rule.transform,
+      confidence: rule.score,
+      reason: 'mock 保留规则',
+    }]
+    if (field.label?.includes('成长故乡')) return [{
+      fieldId: field.fieldId,
+      decision: 'fill',
+      profilePaths: ['basic.nativePlace'],
+      transform: 'identity',
+      confidence: 0.9,
+      reason: '成长故乡即籍贯',
+    }]
+    return []
+  })
+}
+
 export function startMockLlm(port = 8787) {
   const server = http.createServer((req, res) => {
     if (!req.url?.includes('/chat/completions')) {
@@ -70,7 +102,8 @@ export function startMockLlm(port = 8787) {
       try {
         const parsed = JSON.parse(body)
         const last = parsed.messages?.at(-1)?.content ?? ''
-        if (last.includes('任务A')) content = JSON.stringify(EXTRACT)
+        if (last.includes('"task":"review-all-fields-in-section"')) content = JSON.stringify(buildV2Plan(last))
+        else if (last.includes('任务A')) content = JSON.stringify(EXTRACT)
         else if (last.includes('任务B')) content = JSON.stringify(buildReviewPlan(last))
       } catch { /* 默认 ok */ }
       res.writeHead(200, { 'Content-Type': 'application/json' })

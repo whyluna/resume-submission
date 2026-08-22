@@ -3,6 +3,8 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sanitizeCaptureUrl, sanitizePageModel } from '../capture/sanitize'
 import { discoverPageModel } from '../discover/pageModel'
+import { prepareRepeatEntries } from '../adapters/repeatEntries'
+import { createEmptyProfile } from '@/shared/storage'
 
 const FIXTURE_DIR = path.join(process.cwd(), 'e2e', 'fixtures')
 
@@ -41,14 +43,39 @@ describe('PageModel V2 discovery', () => {
     const model = discoverPageModel(document, 'https://app.mokahr.com/campus-recruitment/example#/candidateHome/resume')
 
     expect(model.adapterId).toBe('moka')
+    expect(model.adapterMaturity).toBe('fixture-verified')
     const education = model.sections.find((section) => section.semanticCandidates.includes('educations'))
     expect(education?.entries).toHaveLength(1)
     const fields = education?.entries[0].fields ?? []
     expect(fields.some((field) => field.signals.label === '学校名称')).toBe(true)
+    expect(fields.find((field) => field.signals.label === '学校名称')?.control.kind).toBe('combobox')
     expect(fields.find((field) => field.control.kind === 'date-range-parts')?.control.parts).toHaveLength(5)
     expect(fields.find((field) => field.control.kind === 'date-range-parts')?.control.parts.some((part) => part.role === 'current-toggle')).toBe(true)
     expect(education?.actions.some((action) => action.kind === 'add' && action.safety === 'automatic')).toBe(true)
+    const language = model.sections.find((section) => section.semanticCandidates.includes('languages'))
+    expect(language?.entries).toHaveLength(1)
+    expect(language?.entries[0].fields).toHaveLength(2)
     expect(model.globalActions.some((action) => action.kind === 'save' && action.safety === 'forbidden')).toBe(true)
+  })
+
+  it('adds only missing Moka entries and stays idempotent without clicking save', async () => {
+    loadFixture('moka-real-structure.html')
+    let saveClicks = 0
+    document.querySelector('.save-resume')?.addEventListener('click', () => saveClicks++)
+    const add = document.querySelector('.resume-panel button')
+    add?.addEventListener('click', () => {
+      const card = document.querySelector('.education-card')?.cloneNode(true)
+      if (card) document.querySelector('.resume-panel')?.appendChild(card)
+    })
+    const profile = createEmptyProfile('测试档案')
+    profile.educations.push({ ...profile.educations[0], school: '第二所学校' })
+    const initial = discoverPageModel(document, 'https://app.mokahr.com/campus-recruitment/example#/candidateHome/resume')
+    const first = await prepareRepeatEntries(initial, profile, document)
+    expect(first.added).toBe(1)
+    expect(first.model.sections.find((section) => section.semanticCandidates.includes('educations'))?.entries).toHaveLength(2)
+    const second = await prepareRepeatEntries(first.model, profile, document)
+    expect(second.added).toBe(0)
+    expect(saveClicks).toBe(0)
   })
 
   it('discovers Kuma comboboxes, date ranges and merged experience/project semantics', () => {

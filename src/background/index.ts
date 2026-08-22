@@ -3,6 +3,7 @@ import { detectSite } from '@/shared/siteDetect'
 import { getActiveProfile, getSettings } from '@/shared/storage'
 import { extractProfile, matchFields } from './llm'
 import { planPageSemantics } from './llmPlanner'
+import { projectProfileForPage } from '@/shared/profileProjection'
 
 // 快捷键 Alt+Shift+F：向当前页 content script 下发填写指令
 chrome.commands.onCommand.addListener(async (command) => {
@@ -34,7 +35,9 @@ chrome.runtime.onMessage.addListener((msg: ExtMessage, _sender, sendResponse) =>
     return true
   }
   if (msg.type === 'LLM_PLAN_PAGE') {
-    handlePlanPage(msg.model).then(sendResponse)
+    handlePlanPage(msg.model).then(sendResponse).catch((error) => sendResponse({
+      ok: false, plan: [], rejected: 0, messages: [], error: `规划后台异常：${(error as Error).message}`,
+    } satisfies SemanticPlannerResponse))
     return true
   }
   return false
@@ -44,7 +47,7 @@ async function handlePlanPage(model: Parameters<typeof planPageSemantics>[0]): P
   const [profile, settings] = await Promise.all([getActiveProfile(), getSettings()])
   if (!profile) return { ok: false, plan: [], rejected: 0, messages: [], error: '没有可用简历档案' }
   try {
-    const planned = await planPageSemantics(model, profile, settings)
+    const planned = await planPageSemantics(model, projectProfileForPage(profile, model), settings)
     return { ok: true, plan: planned.accepted, rejected: planned.rejected.length, messages: planned.messages }
   } catch (error) {
     return { ok: false, plan: [], rejected: 0, messages: [], error: (error as Error).message }

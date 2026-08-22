@@ -14,6 +14,7 @@ export interface PageSemanticPlanResult extends ValidatedSemanticPlan {
 
 function ruleFallback(batches: ReturnType<typeof buildSemanticPlannerBatches>): SemanticPlanItem[] {
   return batches.flatMap((batch) => batch.fields.flatMap((field) => {
+    if (field.currentState === 'non-empty' || field.currentState === 'locked') return []
     const candidate = field.ruleCandidates.find((item) => item.score >= 0.55
       && batch.profileFacts.some((fact) => fact.path === item.profilePath))
     return candidate ? [{

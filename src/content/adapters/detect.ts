@@ -15,6 +15,9 @@ export function detectAdapter(context: AdapterContext): AdapterMatch {
 
   if (/mokahr\.com/i.test(url)) add('moka', 100, 'Moka URL')
   if (has(doc, '[class*="moka-"]')) add('moka', 90, 'Moka component classes')
+  if (has(doc, '.search-box') && has(doc, '.ant-picker') && has(doc, '.item-card')) {
+    add('moka', 88, 'Moka resume card/search/date structure')
+  }
 
   if (/\/wt\/[^/]+\/web/i.test(url)) add('dayee-wt', 100, 'Dayee WT URL path')
   if (/hotjob\.cn/i.test(url)) add('dayee-wt', 95, 'hotjob.cn tenant')

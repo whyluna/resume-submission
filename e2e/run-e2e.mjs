@@ -8,12 +8,14 @@
  */
 import { chromium } from 'playwright'
 import path from 'node:path'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { startMockLlm } from './mock-llm.mjs'
 import { launchExtensionBrowser, DIST } from './browser-launch.mjs'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const PROFILE_DIR = '/tmp/rs-e2e-bg-mock'
+const PROFILE_DIR = mkdtempSync(path.join(tmpdir(), 'rs-e2e-bg-'))
 const FIXTURE = 'http://localhost:8000/bank-form.html'
 
 const REAL = {
@@ -411,6 +413,7 @@ try {
 } finally {
   await cleanup()
   mockServer?.close?.()
+  rmSync(PROFILE_DIR, { recursive: true, force: true })
 }
 
 console.log(failures.length === 0 ? '\n🎉 全部断言通过' : `\n💥 ${failures.length} 项失败：${failures.join('、')}`)

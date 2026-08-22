@@ -27,7 +27,11 @@ export function validateSemanticPlan(items: unknown[], batch: SemanticPlannerBat
     if (!raw || typeof raw !== 'object') { rejected.push({ item: raw, reason: '计划项不是对象' }); continue }
     const item = raw as SemanticPlanItem
     if (!fieldIds.has(item.fieldId)) { rejected.push({ item: raw, reason: '未知 fieldId' }); continue }
+    const field = batch.fields.find((candidate) => candidate.fieldId === item.fieldId)
     if (!isDecision(item.decision)) { rejected.push({ item: raw, reason: '未知 decision' }); continue }
+    if (field?.currentState === 'non-empty' && ['fill', 'keep-rule', 'replace-rule'].includes(item.decision)) {
+      rejected.push({ item: raw, reason: '现有非空字段默认不覆盖' }); continue
+    }
     if (!TRANSFORM_IDS.includes(item.transform)) { rejected.push({ item: raw, reason: '转换不在白名单' }); continue }
     if (!Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) {
       rejected.push({ item: raw, reason: 'confidence 必须在 0~1' }); continue

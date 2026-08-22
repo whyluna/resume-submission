@@ -2,6 +2,8 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { launchExtensionBrowser } from './browser-launch.mjs'
 import { startMockLlm } from './mock-llm.mjs'
 
@@ -11,8 +13,7 @@ const server = spawn('python3', ['-m', 'http.server', '8000'], { cwd: fixtures, 
 await new Promise((r) => setTimeout(r, 800))
 const mock = await startMockLlm()
 
-const PROFILE_DIR = '/tmp/rs-debug-profile'
-spawn('rm', ['-rf', PROFILE_DIR])
+const PROFILE_DIR = mkdtempSync(path.join(tmpdir(), 'rs-debug-profile-'))
 
 const PROFILE = {
   schemaVersion: 1, id: 'dbg', name: '调试档案', updatedAt: new Date().toISOString(),
@@ -24,7 +25,7 @@ const PROFILE = {
   ],
   experiences: [], projects: [
     { enabled: true, name: '校园二手书交易平台', role: '后端负责人', startDate: '2023-03', endDate: '2023-09', description: '从 0 到 1 搭建交易平台后端，支撑日均千单。' },
-  ], papers: [], competitions: [], awards: [{ enabled: true, name: '国家奖学金', level: '国家级', date: '2023-10' }],
+  ], papers: [{ enabled: true, title: '示例论文', venue: '示例会议', publishDate: '2025-06', authorOrder: '第一作者', indexed: '', link: '', description: '示例论文介绍。' }], competitions: [], awards: [{ enabled: true, name: '国家奖学金', level: '国家级', date: '2023-10' }],
   studentWork: [], languages: [{ enabled: true, language: '英语', certificate: 'CET-6', score: '580' }],
   itSkills: [], certificates: [], familyMembers: [], selfEvaluation: '调试自我评价', openAnswers: [],
 }
@@ -59,7 +60,7 @@ try {
     const tab = tabs.find((t) => (t.url ?? '').includes('moka-resume'))
     return await chrome.tabs.sendMessage(tab.id, { type: 'CONTENT_FILL' })
   })
-  console.log('fill:', JSON.stringify(summary, (k, v) => (k === 'items' ? v.map((i) => `${i.label || '无标签'}→${i.profilePath}[${i.status}]`) : v), 2))
+  console.log('fill:', JSON.stringify(summary, (k, v) => (k === 'items' ? v.map((i) => `${i.label || '无标签'}→${i.profilePath}[${i.status}] ${i.error ?? i.reason}`) : v), 2))
 
   const state = await zh.evaluate(() => {
     const edu = document.querySelectorAll('.edu-card')
@@ -81,4 +82,5 @@ try {
   await cleanup()
   server.kill()
   mock.close?.()
+  rmSync(PROFILE_DIR, { recursive: true, force: true })
 }
