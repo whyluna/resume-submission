@@ -361,6 +361,33 @@ export function verifyControlValue(field: PageField, expected: ProjectedValue, d
   }
 
   const value = expected.value
+  if (group.kind === 'date-range') {
+    const range = splitRangeValue(value)
+    const start = group.parts.find((part) => part.role === 'start')
+    const end = group.parts.find((part) => part.role === 'end')
+    const toggle = group.parts.find((part) => part.role === 'current-toggle')
+    const readDate = (part: ControlPart | undefined, expectedDate: string): boolean => {
+      if (!part) return false
+      const element = resolveElement(part.ref, doc)
+      const actual = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+        ? element.value : selectedText(element ?? root)
+      return dateReadbackMatches(actual, expectedDate)
+    }
+    const startOk = readDate(start, range.start)
+    const endOk = range.current
+      ? (() => {
+          if (!end) return true
+          const element = resolveElement(end.ref, doc)
+          const actual = element instanceof HTMLInputElement ? element.value : ''
+          return actual === '' || /至今|现在|在读|在职|进行中/.test(actual)
+        })()
+      : readDate(end, range.end)
+    const toggleOk = !toggle || readDatePart(toggle, range.current ? '是' : '否', doc)
+    const verified = startOk && endOk && toggleOk
+    return verified
+      ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期区间最终读回通过' })
+      : result(field.id, { written: true, committed: true, failureClass: 'control', message: '日期区间最终读回不一致' })
+  }
   if (group.kind === 'custom-select' || group.kind === 'combobox' || group.kind === 'cascader') {
     const verified = valueMatches(selectedText(root), value)
     return verified

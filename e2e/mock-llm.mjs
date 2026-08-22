@@ -119,6 +119,35 @@ function buildAgentToolPlan(prompt) {
   }
 }
 
+function buildOneShotSemanticPlan(prompt) {
+  const payload = JSON.parse(prompt)
+  const fields = payload.form?.fields ?? []
+  return {
+    plan: fields.map((field) => {
+      if (field.existingState === 'non-empty' || field.existingState === 'locked') return {
+        fieldId: field.fieldId, decision: 'skip', profilePaths: [], transform: 'identity', confidence: 1, reason: '已有值或锁定',
+      }
+      if (field.labels?.some((label) => label === '职责') && field.entryRoute?.factPrefix?.startsWith('projects[')) return {
+        fieldId: field.fieldId, decision: 'replace-rule', profilePaths: [`${field.entryRoute.factPrefix}.description`],
+        transform: 'identity', confidence: 0.9, reason: '职责使用项目描述',
+      }
+      if (field.labels?.some((label) => label.includes('成长故乡'))) return {
+        fieldId: field.fieldId, decision: 'fill', profilePaths: ['basic.nativePlace'],
+        transform: 'identity', confidence: 0.9, reason: '成长故乡即籍贯',
+      }
+      const rule = field.ruleHints?.[0]
+      if (rule) return {
+        fieldId: field.fieldId, decision: 'keep-rule', profilePaths: [rule.path],
+        transform: field.allowedTransforms?.includes(rule.transform) ? rule.transform : (field.allowedTransforms?.[0] ?? 'identity'),
+        confidence: rule.confidence, reason: 'mock 全量复审保留规则',
+      }
+      return {
+        fieldId: field.fieldId, decision: 'manual', profilePaths: [], transform: 'identity', confidence: 1, reason: '没有可靠事实',
+      }
+    }),
+  }
+}
+
 export function startMockLlm(port = 8787) {
   const server = http.createServer((req, res) => {
     if (!req.url?.includes('/chat/completions')) {
@@ -132,7 +161,8 @@ export function startMockLlm(port = 8787) {
       try {
         const parsed = JSON.parse(body)
         const last = parsed.messages?.at(-1)?.content ?? ''
-        if (last.includes('"mode":"agent-tool-round"') || last.includes('"mode":"agent-repair-round"')) content = JSON.stringify(buildAgentToolPlan(last))
+        if (last.includes('"task":"review-all-fields-once"')) content = JSON.stringify(buildOneShotSemanticPlan(last))
+        else if (last.includes('"mode":"agent-tool-round"') || last.includes('"mode":"agent-repair-round"')) content = JSON.stringify(buildAgentToolPlan(last))
         else if (last.includes('"task":"review-all-fields-in-section"')) content = JSON.stringify(buildV2Plan(last))
         else if (last.includes('任务A')) content = JSON.stringify(EXTRACT)
         else if (last.includes('任务B')) content = JSON.stringify(buildReviewPlan(last))

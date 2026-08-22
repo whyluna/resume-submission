@@ -35,6 +35,7 @@ const STYLE = `
   li .val { color: #6b7280; word-break: break-all }
   li .why { color: #9ca3af; font-size: 12px }
   .tip { color: #9ca3af; font-size: 12px; margin-top: 8px }
+  .diag { padding: 7px 9px; margin: 8px 0; border-radius: 8px; background: #f8fafc; color: #475569; font-size: 12px }
 `
 
 function ensurePanel(): void {
@@ -94,6 +95,11 @@ export function renderSummary(s: FillSummary): void {
       ${chip(s.unmatched, '未匹配', 'c-un')}
       ${chip(s.manual, '需手动', 'c-man')}
     </div>
+    ${s.diagnostics ? `<div class="diag">
+      语义映射 ${s.diagnostics.mapped}（LLM ${s.diagnostics.modelMapped} / 规则 ${s.diagnostics.ruleMapped} / 安全决策 ${s.diagnostics.localSafety}）<br>
+      本地执行：写入 ${s.diagnostics.written} → 控件提交 ${s.diagnostics.committed} → 最终读回 ${s.diagnostics.verified}<br>
+      模型请求 ${s.diagnostics.modelRequests} 次 · 计划拒绝 ${s.diagnostics.rejected} · 新增条目 ${s.diagnostics.entriesAdded}
+    </div>` : ''}
     <ul>${rows || '<li class="why">没有待确认项 🎉</li>'}</ul>
     <div class="tip">只填不提交——请逐项核对，橙/红项点击页面字段可定位修改。</div>
   `

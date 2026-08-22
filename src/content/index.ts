@@ -1,7 +1,7 @@
 import type {
-  AgentRoundResponse, ExtMessage, FieldEl, FillResultItem, FillSummary, GroupEl, Profile, ScanRes, SectionKey, SemanticPlannerResponse,
+  ExtMessage, FieldEl, FillResultItem, FillSummary, GroupEl, OneShotSemanticResponse, Profile, ScanRes, SectionKey, SemanticPlannerResponse,
 } from '@/shared/types'
-import type { AgentToolCall, AgentToolResult } from '@/shared/agent'
+import type { FormPageIR } from '@/shared/formIr'
 import { norm } from '@/shared/util'
 import { detectSite } from '@/shared/siteDetect'
 import { getActiveProfile, getSettings } from '@/shared/storage'
@@ -15,7 +15,7 @@ import { executeSemanticPlan } from './executorV2/executePlan'
 import { prepareRepeatEntries } from './adapters/repeatEntries'
 import { resolveElement } from './executorV2/dom'
 import { projectProfileForPage } from '@/shared/profileProjection'
-import { runAgent } from './agent/runAgent'
+import { runSemanticOnce } from './agent/runSemanticOnce'
 
 declare const window: Window & { __rsAutofillInjected?: boolean }
 if (!window.__rsAutofillInjected) {
@@ -70,8 +70,7 @@ if (!window.__rsAutofillInjected) {
 
 async function fillCurrent(): Promise<FillSummary> {
   const settings = await getSettings()
-  const agentReady = settings.agentMode && settings.privacyMode !== 'off' && !!settings.apiBaseUrl && !!settings.apiKey && !!settings.model
-  if (agentReady) return fillWithAgent()
+  if (settings.agentMode) return fillWithAgent()
   const adapterId = discoverPageModel(document, location.href).adapterId
   const useV2 = adapterId === 'moka' || adapterId === 'dayee-wt' || adapterId === 'kuma'
   return useV2 ? fillPlatformV2(adapterId) : fillAll()
@@ -113,26 +112,13 @@ async function requestPagePlan(model: ReturnType<typeof discoverPageModel>): Pro
   return response ?? { ok: false, plan: [], rejected: 0, messages: [], error: '规划后台连续两次未响应，请刷新页面后重试' }
 }
 
-async function requestAgentRound(input: {
-  model: ReturnType<typeof discoverPageModel>
-  round: number
-  targetFieldIds: string[]
-  previousResults: AgentToolResult[]
-  previousIssues: string[]
-}): Promise<AgentRoundResponse> {
-  const message = { type: 'LLM_AGENT_ROUND', ...input } satisfies ExtMessage
-  const response = await chrome.runtime.sendMessage(message) as AgentRoundResponse | undefined
+async function requestOneShotReview(ir: FormPageIR): Promise<OneShotSemanticResponse> {
+  const message = { type: 'LLM_REVIEW_ONESHOT', ir } satisfies ExtMessage
+  const response = await chrome.runtime.sendMessage(message) as OneShotSemanticResponse | undefined
   return response ?? {
-    ok: false, calls: [], coveredFieldIds: [], missingFieldIds: input.targetFieldIds,
-    rejected: [], observationFieldCount: 0, error: 'Agent 规划后台未响应，请刷新扩展后重试',
+    ok: false, plan: [], modelRequestCount: 0, modelDecisions: 0, ruleDecisions: 0, manualDecisions: 0,
+    rejected: [], messages: [], latencyMs: 0, sources: {}, error: '单次语义复审后台未响应，请刷新扩展后重试',
   }
-}
-
-function agentFactIds(call: AgentToolCall | undefined): string[] {
-  if (!call) return []
-  const args = call.args as unknown as Record<string, unknown>
-  return [args.factId, args.startFactId, args.endFactId, args.currentFactId,
-    ...(Array.isArray(args.factIds) ? args.factIds : [])].filter((value): value is string => typeof value === 'string')
 }
 
 async function fillWithAgent(): Promise<FillSummary> {
@@ -143,53 +129,79 @@ async function fillWithAgent(): Promise<FillSummary> {
     + section.entries.reduce((sum, entry) => sum + entry.fields.length, 0), 0)
   if (fieldCount === 0) throw new Error('Agent 未观察到可填写字段；请先运行“仅扫描表单”查看诊断')
   const profile = projectProfileForPage(stored, initialModel)
-  setStatus(`LLM Agent：已观察 ${initialModel.sections.length} 个分区、${fieldCount} 个字段，开始规划…`)
-  const report = await runAgent(initialModel, profile, settings.privacyMode, requestAgentRound, document, setStatus)
-  const fields = new Map([...initialModel.sections, ...report.model.sections].flatMap((section) => [
+  setStatus(`混合语义 Agent：已观察 ${initialModel.sections.length} 个分区、${fieldCount} 个字段…`)
+  const report = await runSemanticOnce(initialModel, profile, settings.privacyMode, requestOneShotReview, document, setStatus)
+  const finalModel = discoverPageModel(document, location.href)
+  const fields = new Map([...report.prepared.model.sections, ...finalModel.sections].flatMap((section) => [
     ...section.fields,
     ...section.entries.flatMap((entry) => entry.fields),
   ]).map((field) => [field.id, field]))
-  const sections = [...initialModel.sections, ...report.model.sections]
-  const callById = new Map(report.calls.map((call) => [call.callId, call]))
-  const factPathById = new Map(report.observation.facts.map((fact) => [fact.factId, fact.path]))
-  const finalEntries = Array.from(report.finalByField.entries())
-  const items: FillResultItem[] = finalEntries.map(([fieldId, result]) => {
+  const sections = report.prepared.model.sections
+  const irFieldById = new Map(report.ir.fields.map((field) => [field.fieldId, field]))
+  const resultByField = new Map(report.execution.results.map((result) => [result.fieldId, result]))
+  const items: FillResultItem[] = report.plan.map((plan) => {
+    const fieldId = plan.fieldId
     const field = fields.get(fieldId)
-    const call = callById.get(result.callId)
+    const irField = irFieldById.get(fieldId)
+    const result = resultByField.get(fieldId)
     const root = field ? resolveElement(field.control.root, document) : null
-    const skipped = call?.tool === 'mark_skip'
-    const status = result.status === 'verified' ? 'filled' : skipped ? 'skipped' : result.status === 'manual' ? 'review' : 'failed'
+    const status = result?.verified ? 'filled' : plan.decision === 'skip' ? 'skipped' : result?.state === 'manual' ? 'review' : 'failed'
     if (root) highlight(root, status === 'filled' ? 'filled' : status === 'review' ? 'review' : 'failed')
     const section = sections.find((candidate) => candidate.fields.some((item) => item.id === fieldId)
       || candidate.entries.some((entry) => entry.fields.some((item) => item.id === fieldId)))
+    const source = report.sources[fieldId] ?? 'local-safety'
+    const sourceText = source === 'llm-review' ? 'LLM 全量复审' : source === 'rule-candidate' ? '规则候选' : '本地安全决策'
+    const stage = result
+      ? `映射=${result.mapped ? '是' : '否'}，写入=${result.written ? '是' : '否'}，提交控件=${result.committed ? '是' : '否'}，最终读回=${result.verified ? '一致' : '未通过'}`
+      : '没有执行结果'
     return {
       fieldRef: { cssPath: field?.control.root.cssPath ?? '', index: field?.control.root.index ?? 0 },
-      sectionKey: section?.semanticCandidates[0] ?? 'unknown',
-      profilePath: agentFactIds(call).map((factId) => factPathById.get(factId) ?? factId).join(','),
-      label: field?.signals.label || field?.signals.placeholder || '未命名字段',
-      value: '', confidence: result.status === 'verified' ? 1 : 0,
-      via: 'llm',
-      reason: `Agent ${call?.tool ?? result.tool}：${result.evidence.join('；')}`,
+      sectionKey: irField?.entryRoute?.profileSection ?? section?.semanticCandidates[0] ?? 'unknown',
+      profilePath: plan.profilePaths.join(','),
+      label: irField?.labels[0] || field?.signals.label || field?.signals.placeholder || '未命名字段',
+      value: '', confidence: plan.confidence,
+      via: source === 'llm-review' ? 'llm' : 'rule',
+      reason: `${sourceText}：${plan.decision} / ${plan.transform} / ${plan.reason || '无说明'}；本地执行：${stage}${result?.message ? `；${result.message}` : ''}`,
       status,
-      ...(status === 'failed' ? { error: result.evidence.join('；') } : {}),
+      ...(status === 'failed' ? { error: result?.message || '没有执行结果' } : {}),
     }
   })
   const filled = items.filter((item) => item.status === 'filled').length
   const review = items.filter((item) => item.status === 'review').length
   const failed = items.filter((item) => item.status === 'failed').length
   const adapterName = initialModel.adapterId === 'generic' ? 'Generic' : initialModel.adapterId
+  const modelMapped = report.plan.filter((item) => report.sources[item.fieldId] === 'llm-review'
+    && ['fill', 'keep-rule', 'replace-rule'].includes(item.decision)).length
+  const ruleMapped = report.plan.filter((item) => report.sources[item.fieldId] === 'rule-candidate'
+    && ['fill', 'keep-rule', 'replace-rule'].includes(item.decision)).length
+  const localSafety = report.plan.filter((item) => report.sources[item.fieldId] === 'local-safety').length
+  const mapped = report.plan.filter((item) => ['fill', 'keep-rule', 'replace-rule'].includes(item.decision)).length
+  const written = report.execution.results.filter((item) => item.written).length
+  const committed = report.execution.results.filter((item) => item.committed).length
   const summary: FillSummary = {
-    totalFields: items.length,
+    totalFields: report.ir.fields.length,
     filled,
     review,
     failed,
-    unmatched: 0,
+    unmatched: report.plan.filter((item) => item.decision === 'manual' && item.profilePaths.length === 0).length,
     manual: review,
     items,
-    siteName: `${adapterName} LLM Agent（${report.rounds} 轮，${report.calls.length} 个工具调用，拒绝 ${report.rejected.length}；未保存/未提交）`,
+    siteName: `${adapterName} 混合语义 Agent（${report.review.modelRequestCount} 次模型请求；模型 ${report.review.modelDecisions} / 规则与安全 ${report.review.ruleDecisions}；新增 ${report.prepared.added}；未保存/未提交）`,
     at: Date.now(),
+    diagnostics: {
+      modelRequests: report.review.modelRequestCount,
+      modelMapped,
+      ruleMapped,
+      localSafety,
+      mapped,
+      written,
+      committed,
+      verified: report.execution.verified,
+      rejected: report.review.rejected.length,
+      entriesAdded: report.prepared.added,
+    },
   }
-  setStatus(`LLM Agent：已验证 ${filled}，人工 ${review}，失败 ${failed}；未保存/未提交`)
+  setStatus(`混合语义 Agent：语义映射 ${mapped}，写入 ${written}，控件提交 ${committed}，最终读回 ${filled}；未保存/未提交`)
   renderSummary(summary)
   return summary
 }

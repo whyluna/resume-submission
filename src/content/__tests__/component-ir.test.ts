@@ -114,4 +114,24 @@ describe('repeat entry routes', () => {
 
     expect(routes.map((route) => route.factPrefix)).toEqual(['experiences[0]', 'projects[0]', 'projects[1]'])
   })
+
+  it('routes every award entry to a distinct award instead of repeating the first one', () => {
+    const profile = createEmptyProfile('测试档案')
+    profile.awards = [
+      { enabled: true, name: '奖项一', level: '校级', date: '2023-06' },
+      { enabled: true, name: '奖项二', level: '省级', date: '2024-06' },
+      { enabled: true, name: '奖项三', level: '国家级', date: '2025-06' },
+    ]
+    const base = discoverPageModel(document, 'https://example.com/resume')
+    base.sections = [{
+      id: 'awards', title: '获奖经历', root: { cssPath: 'body', index: 0, framePath: [], signature: 'awards' },
+      semanticCandidates: ['awards'], fields: [], actions: [],
+      entries: [0, 1, 2].map((index) => ({
+        id: `award-${index}`, index, root: { cssPath: 'body', index: 0, framePath: [], signature: `award-${index}` },
+        kindCandidates: ['awards'], fields: [],
+      })),
+    }]
+    const routes = buildEntryRoutes(base, profile)
+    expect(routes.map((route) => route.factPrefix)).toEqual(['awards[0]', 'awards[1]', 'awards[2]'])
+  })
 })

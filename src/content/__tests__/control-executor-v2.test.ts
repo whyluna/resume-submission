@@ -85,6 +85,36 @@ describe('V2 verified control executor', () => {
     expect((document.querySelector('#current') as HTMLInputElement).checked).toBe(true)
   })
 
+  it('opens and commits every custom-select date slot instead of leaving typed search text', async () => {
+    const control = (id: string) => `<div id="${id}" role="combobox" aria-controls="${id}-options"><span class="selected-label"></span><input></div>
+      <div id="${id}-options" role="listbox" style="display:none"><div role="option"></div></div>`
+    document.body.innerHTML = `<div id="range">${control('sy')}${control('sm')}${control('ey')}${control('em')}</div>`
+    const bind = (id: string, value: string) => {
+      const root = document.querySelector(`#${id}`) as HTMLElement
+      const overlay = document.querySelector(`#${id}-options`) as HTMLElement
+      const option = overlay.querySelector('[role="option"]') as HTMLElement
+      option.textContent = value
+      root.addEventListener('click', () => { overlay.style.display = 'block' })
+      option.addEventListener('click', () => {
+        ;(root.querySelector('.selected-label') as HTMLElement).textContent = value
+        root.dataset.value = value
+        overlay.style.display = 'none'
+      })
+    }
+    bind('sy', '2022'); bind('sm', '09'); bind('ey', '2026'); bind('em', '06')
+    const range = field('custom-range', 'date-range-parts', '#range', [
+      ['start-year', '#sy'], ['start-month', '#sm'], ['end-year', '#ey'], ['end-month', '#em'],
+    ])
+    range.control.parts = range.control.parts.map((part) => ({ ...part, controlKind: 'custom-select' }))
+    const result = await executeControl({
+      field: range,
+      value: projectDateRange({ startDate: '2022-09', endDate: '2026-06', endDateIsNow: false }),
+    })
+    expect(result).toMatchObject({ state: 'verified', committed: true, verified: true })
+    expect(['sy', 'sm', 'ey', 'em'].map((id) => (document.querySelector(`#${id}`) as HTMLElement).dataset.value))
+      .toEqual(['2022', '09', '2026', '06'])
+  })
+
   it('marks maxlength truncation for manual review instead of verified', async () => {
     document.body.innerHTML = '<textarea id="summary" maxlength="5"></textarea>'
     const text = field('summary', 'textarea', '#summary', [['input', '#summary']])

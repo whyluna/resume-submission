@@ -102,6 +102,14 @@ export function Popup() {
             <span className="chip un">未匹配 {fillRes.unmatched}</span>
             <span className="chip man">需手动 {fillRes.manual}</span>
           </div>
+          {fillRes.diagnostics && (
+            <div style={{ fontSize: 12, color: '#475569', margin: '6px 0' }}>
+              映射 {fillRes.diagnostics.mapped}（LLM {fillRes.diagnostics.modelMapped} / 规则 {fillRes.diagnostics.ruleMapped}）
+              {' → '}写入 {fillRes.diagnostics.written}
+              {' → '}提交控件 {fillRes.diagnostics.committed}
+              {' → '}最终读回 {fillRes.diagnostics.verified}
+            </div>
+          )}
           <div className="list">
             {fillRes.items.filter((i) => i.status !== 'filled').slice(0, 8).map((i, k) => (
               <div key={k}>{i.status === 'failed' ? '❌' : '🟠'} {i.label}：{i.error ?? i.reason}</div>

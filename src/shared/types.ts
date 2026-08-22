@@ -356,6 +356,18 @@ export interface FillSummary {
   items: FillResultItem[]
   siteName: string
   at: number
+  diagnostics?: {
+    modelRequests: number
+    modelMapped: number
+    ruleMapped: number
+    localSafety: number
+    mapped: number
+    written: number
+    committed: number
+    verified: number
+    rejected: number
+    entriesAdded: number
+  }
 }
 
 // ---------------- LLM ----------------

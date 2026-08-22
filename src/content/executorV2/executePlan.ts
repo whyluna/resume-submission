@@ -4,7 +4,9 @@ import type { ProjectedValue, SemanticPlanItem } from '@/shared/semanticPlan'
 import { getProfileValue } from '../matcher'
 import { projectDateRange, projectValues } from '../planner/projection'
 import { executeControl } from './controls'
+import { verifyControlValue } from './controls'
 import type { ControlExecutionResult } from './types'
+import { discoverPageModel } from '../discover/pageModel'
 
 export interface ExecutionReportV2 {
   total: number
@@ -52,6 +54,7 @@ export async function executeSemanticPlan(
 ): Promise<ExecutionReportV2> {
   const fields = allFields(model)
   const results: ControlExecutionResult[] = []
+  const expectedByField = new Map<string, ProjectedValue>()
   for (const item of plan) {
     const field = fields.get(item.fieldId)
     if (!field) {
@@ -62,7 +65,31 @@ export async function executeSemanticPlan(
       results.push({ fieldId: item.fieldId, state: 'manual', mapped: true, written: false, committed: false, verified: false, failureClass: 'semantic', message: item.reason || '规划器要求人工处理' })
       continue
     }
-    results.push(await executeControl({ field, value: projectPlanValue(profile, item) }, doc))
+    const value = projectPlanValue(profile, item)
+    expectedByField.set(field.id, value)
+    results.push(await executeControl({ field, value }, doc))
+  }
+  // One authoritative final pass separates "write appeared to work" from "freshly rediscovered state matches".
+  const freshFields = allFields(discoverPageModel(doc, model.url))
+  for (let index = 0; index < results.length; index++) {
+    const initial = results[index]
+    if (!initial.verified) continue
+    const field = freshFields.get(initial.fieldId) ?? fields.get(initial.fieldId)
+    const expected = expectedByField.get(initial.fieldId)
+    if (!field || !expected) {
+      results[index] = { ...initial, state: 'failed', verified: false, failureClass: 'stale-ref', message: `${initial.message}；最终重新扫描和稳定引用均未找到字段` }
+      continue
+    }
+    const readback = verifyControlValue(field, expected, doc)
+    results[index] = readback.verified
+      ? { ...initial, message: `${initial.message}；最终重新扫描读回一致` }
+      : {
+          ...initial,
+          state: 'failed',
+          verified: false,
+          failureClass: readback.failureClass ?? 'control',
+          message: `${initial.message}；最终重新扫描读回失败：${readback.message}`,
+        }
   }
   return {
     total: results.length,
