@@ -14,6 +14,9 @@ export interface FieldDef {
   list?: boolean
   /** 敏感：编辑器加提示；发给 LLM 的摘要中以 *** 掩码 */
   sensitive?: boolean
+  /** 日期字段在失焦/保存时归一化；range end 可关联独立的“至今”标志。 */
+  date?: true
+  ongoingKey?: 'endDateIsNow'
 }
 
 export interface SectionDef {
@@ -36,7 +39,7 @@ export const SECTIONS: SectionDef[] = [
     fields: [
       { k: 'name', label: '姓名' },
       { k: 'gender', label: '性别', ctrl: 'select', options: ['', '男', '女'] },
-      { k: 'birthDate', label: '出生日期', ph: '2001-03-15' },
+      { k: 'birthDate', label: '出生日期', ph: '2001-03-15', date: true },
       { k: 'nation', label: '民族', ph: '汉族' },
       { k: 'politicalStatus', label: '政治面貌', ctrl: 'select', options: ['', '中共党员', '中共预备党员', '共青团员', '群众', '民主党派'] },
       { k: 'idType', label: '证件类型', ctrl: 'select', options: ['身份证', '护照'] },
@@ -89,8 +92,8 @@ export const SECTIONS: SectionDef[] = [
       { k: 'major', label: '专业' },
       { k: 'education', label: '学历', ctrl: 'select', options: ['', '博士研究生', '硕士研究生', '本科', '专科', '其他'] },
       { k: 'degree', label: '学位', ctrl: 'select', options: ['', '博士', '硕士', '学士', '双学位', '无'] },
-      { k: 'startDate', label: '开始时间', ph: '2022-09' },
-      { k: 'endDate', label: '结束时间', ph: '2026-06' },
+      { k: 'startDate', label: '开始时间', ph: '2022-09', date: true },
+      { k: 'endDate', label: '结束时间', ph: '2026-06', date: true, ongoingKey: 'endDateIsNow' },
       { k: 'studyMode', label: '学习形式', ctrl: 'select', options: ['', '全日制', '非全日制'] },
       { k: 'eduType', label: '培养方式', ph: '统招' },
       { k: 'schoolLevel', label: '学校类别', ph: '985 / 211 / 双一流 / QS前100' },
@@ -115,8 +118,8 @@ export const SECTIONS: SectionDef[] = [
       { k: 'department', label: '部门' },
       { k: 'title', label: '职位' },
       { k: 'city', label: '城市' },
-      { k: 'startDate', label: '开始时间', ph: '2024-06' },
-      { k: 'endDate', label: '结束时间', ph: '2024-12（至今则填"至今"）' },
+      { k: 'startDate', label: '开始时间', ph: '2024-06', date: true },
+      { k: 'endDate', label: '结束时间', ph: '2024-12', date: true, ongoingKey: 'endDateIsNow' },
       { k: 'description', label: '工作内容', ctrl: 'textarea' },
       { k: 'achievements', label: '主要业绩', ctrl: 'textarea' },
     ],
@@ -129,8 +132,8 @@ export const SECTIONS: SectionDef[] = [
     fields: [
       { k: 'name', label: '项目名称' },
       { k: 'role', label: '担任角色' },
-      { k: 'startDate', label: '开始时间' },
-      { k: 'endDate', label: '结束时间' },
+      { k: 'startDate', label: '开始时间', ph: '2024-01', date: true },
+      { k: 'endDate', label: '结束时间', ph: '2024-06', date: true, ongoingKey: 'endDateIsNow' },
       { k: 'url', label: '项目链接' },
       { k: 'techStack', label: '技术栈', list: true, ph: 'Go、Kafka、Redis' },
       { k: 'description', label: '项目描述', ctrl: 'textarea' },
@@ -145,7 +148,7 @@ export const SECTIONS: SectionDef[] = [
     fields: [
       { k: 'title', label: '题目' },
       { k: 'venue', label: '期刊/会议' },
-      { k: 'publishDate', label: '发表时间' },
+      { k: 'publishDate', label: '发表时间', ph: '2025-06', date: true },
       { k: 'authorOrder', label: '作者排序', ph: '第一作者' },
       { k: 'indexed', label: '检索', ph: 'SCI / EI / CCF-A' },
       { k: 'link', label: '链接' },
@@ -161,7 +164,7 @@ export const SECTIONS: SectionDef[] = [
       { k: 'name', label: '竞赛名称' },
       { k: 'level', label: '级别', ctrl: 'select', options: ['', '国际', '国家级', '省级', '市级', '校级'] },
       { k: 'award', label: '奖项等级', ph: '一等奖 / 金奖' },
-      { k: 'date', label: '获奖时间' },
+      { k: 'date', label: '获奖时间', ph: '2025-06', date: true },
       { k: 'role', label: '担任角色' },
       { k: 'description', label: '说明', ctrl: 'textarea' },
     ],
@@ -174,7 +177,7 @@ export const SECTIONS: SectionDef[] = [
     fields: [
       { k: 'name', label: '奖项名称' },
       { k: 'level', label: '级别', ctrl: 'select', options: ['', '国际', '国家级', '省级', '市级', '校级'] },
-      { k: 'date', label: '获奖时间' },
+      { k: 'date', label: '获奖时间', ph: '2025-06', date: true },
     ],
   },
   {
@@ -185,8 +188,8 @@ export const SECTIONS: SectionDef[] = [
     fields: [
       { k: 'org', label: '组织名称' },
       { k: 'role', label: '职务' },
-      { k: 'startDate', label: '开始时间' },
-      { k: 'endDate', label: '结束时间' },
+      { k: 'startDate', label: '开始时间', ph: '2024-01', date: true },
+      { k: 'endDate', label: '结束时间', ph: '2024-06', date: true, ongoingKey: 'endDateIsNow' },
       { k: 'description', label: '工作内容', ctrl: 'textarea' },
     ],
   },
@@ -199,7 +202,7 @@ export const SECTIONS: SectionDef[] = [
       { k: 'language', label: '语言', ph: '英语' },
       { k: 'certificate', label: '证书', ph: 'CET-4 / CET-6 / 托福 / 雅思' },
       { k: 'score', label: '分数' },
-      { k: 'date', label: '考试时间' },
+      { k: 'date', label: '考试时间', ph: '2025-06', date: true },
       { k: 'proficiency', label: '熟练程度' },
     ],
   },
@@ -211,7 +214,7 @@ export const SECTIONS: SectionDef[] = [
     fields: [
       { k: 'name', label: '证书名称' },
       { k: 'issuer', label: '颁发机构' },
-      { k: 'date', label: '获得时间' },
+      { k: 'date', label: '获得时间', ph: '2025-06', date: true },
       { k: 'number', label: '证书编号' },
     ],
   },
@@ -262,8 +265,10 @@ export function emptyItemFor(sectionKey: string): Record<string, unknown> {
   const item: Record<string, unknown> = def.repeat ? { enabled: true } : {}
   for (const f of def.fields) item[f.k] = f.list ? [] : f.ctrl === 'select' ? (f.options?.[0] ?? '') : ''
   const defaults: Record<string, Record<string, unknown>> = {
-    educations: { studyMode: '全日制', eduType: '统招', isOverseas: '否' },
-    experiences: { kind: 'internship' },
+    educations: { studyMode: '全日制', eduType: '统招', isOverseas: '否', endDateIsNow: false },
+    experiences: { kind: 'internship', endDateIsNow: false },
+    projects: { endDateIsNow: false },
+    studentWork: { endDateIsNow: false },
     familyMembers: { relation: '父亲' },
     languages: { language: '英语' },
   }

@@ -1,4 +1,5 @@
 import type { Profile, Settings } from './types'
+import { normalizeProfileDates } from './dateValues'
 
 const KEY_PROFILES = 'rs.profiles'
 const KEY_ACTIVE = 'rs.activeProfileId'
@@ -16,7 +17,7 @@ export function normalizeProfile<T extends Profile>(p: T): T {
     p.selfEvaluation = ''
   }
   if (!Array.isArray(p.itSkills)) p.itSkills = []
-  return p
+  return normalizeProfileDates(p)
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -136,5 +137,5 @@ export function parseBackup(text: string): Profile[] {
   if (o.format !== 'ResumeAutofillProfileBackup' || !Array.isArray(o.profiles)) {
     throw new Error('不是有效的档案备份文件')
   }
-  return o.profiles
+  return o.profiles.map(normalizeProfile)
 }

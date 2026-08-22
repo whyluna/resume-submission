@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FieldDef, SectionDef } from '@/shared/profileSchema'
 import { emptyItemFor } from '@/shared/profileSchema'
+import { normalizeDateValue } from '@/shared/dateValues'
 
 type Item = Record<string, unknown>
 
@@ -77,15 +78,32 @@ function FieldGrid({ def, item, onSet }: { def: SectionDef; item: Item; onSet: (
   return (
     <div className="grid">
       {def.fields.map((f) => (
-        <FieldInput key={f.k} f={f} value={item[f.k]} onChange={(v) => onSet(f.k, v)} />
+        <FieldInput
+          key={f.k}
+          f={f}
+          value={item[f.k]}
+          ongoing={f.ongoingKey ? item[f.ongoingKey] === true : false}
+          onChange={(v) => onSet(f.k, v)}
+          onOngoingChange={f.ongoingKey ? (v) => onSet(f.ongoingKey!, v) : undefined}
+        />
       ))}
     </div>
   )
 }
 
-function FieldInput({ f, value, onChange }: { f: FieldDef; value: unknown; onChange: (v: unknown) => void }) {
-  const display = Array.isArray(value) ? value.join('、') : String(value ?? '')
-  const handleChange = (v: string) => onChange(f.list ? v.split(/[、,，;；\s]+/).filter(Boolean) : v)
+function FieldInput({ f, value, ongoing, onChange, onOngoingChange }: {
+  f: FieldDef
+  value: unknown
+  ongoing: boolean
+  onChange: (v: unknown) => void
+  onOngoingChange?: (v: boolean) => void
+}) {
+  const [dateError, setDateError] = useState('')
+  const display = ongoing ? '' : Array.isArray(value) ? value.join('、') : String(value ?? '')
+  const handleChange = (v: string) => {
+    if (f.date) setDateError('')
+    onChange(f.list ? v.split(/[、,，;；\s]+/).filter(Boolean) : v)
+  }
   return (
     <div className={`field ${f.ctrl === 'textarea' ? 'wide' : ''}`}>
       <label>
@@ -99,8 +117,27 @@ function FieldInput({ f, value, onChange }: { f: FieldDef; value: unknown; onCha
       ) : f.ctrl === 'textarea' ? (
         <textarea value={display} placeholder={f.ph} onChange={(e) => handleChange(e.target.value)} />
       ) : (
-        <input type="text" value={display} placeholder={f.ph} onChange={(e) => handleChange(e.target.value)} />
+        <input
+          type="text"
+          value={display}
+          placeholder={f.ph}
+          disabled={ongoing}
+          onChange={(e) => handleChange(e.target.value)}
+          onBlur={(e) => {
+            if (!f.date) return
+            const normalized = normalizeDateValue(e.target.value)
+            setDateError(normalized.valid ? '' : '日期格式无法识别，请按 YYYY、YYYY-MM 或 YYYY-MM-DD 校对')
+            onChange(normalized.value)
+          }}
+        />
       )}
+      {onOngoingChange && (
+        <label className="note">
+          <input type="checkbox" checked={ongoing} onChange={(e) => onOngoingChange(e.target.checked)} /> 至今 / 进行中
+        </label>
+      )}
+      {f.date && <span className="note">统一保存为 YYYY、YYYY-MM 或 YYYY-MM-DD</span>}
+      {dateError && <span className="note warn">{dateError}</span>}
       {f.sensitive && <span className="note">敏感字段，任何模式下不发给 LLM</span>}
     </div>
   )

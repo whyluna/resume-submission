@@ -130,6 +130,7 @@ async function fillAll(): Promise<FillSummary> {
       role: p.authorOrder,
       startDate: '',
       endDate: p.publishDate,
+      endDateIsNow: false,
       url: p.link,
       description: [p.description, p.venue ? `发表于 ${p.venue}` : '', p.indexed ? `检索：${p.indexed}` : ''].filter(Boolean).join('；'),
       contribution: '',

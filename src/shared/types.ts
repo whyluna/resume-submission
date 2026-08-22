@@ -94,6 +94,7 @@ export interface Project {
   role: string
   startDate: string
   endDate: string
+  endDateIsNow: boolean
   url: string
   description: string
   contribution: string
@@ -136,6 +137,7 @@ export interface OrgExperience {
   role: string
   startDate: string
   endDate: string
+  endDateIsNow: boolean
   description: string
 }
 

@@ -1,6 +1,7 @@
 import type { LlmMatchFieldIn, LlmMatchItem, Profile, Settings } from '@/shared/types'
 import { SECTIONS, SECTION_BY_KEY } from '@/shared/profileSchema'
 import { getSettings } from '@/shared/storage'
+import { normalizeProfileDates } from '@/shared/dateValues'
 
 const TIMEOUT_MS = 150_000
 
@@ -72,12 +73,15 @@ function schemaHint(): string {
   const part = (key: string) => {
     const def = SECTION_BY_KEY[key]
     const fields = def.fields.map((f) => `"${f.k}":"${f.label}"`).join(',')
-    return def.repeat ? `"${key}":[{"enabled":true,${fields}}]` : `"${key}":{${fields}}`
+    const ongoing = ['educations', 'experiences', 'projects', 'studentWork'].includes(key)
+      ? ',"endDateIsNow":"是否至今/进行中(boolean)"'
+      : ''
+    return def.repeat ? `"${key}":[{"enabled":true,${fields}${ongoing}}]` : `"${key}":{${fields}}`
   }
-  return `{\n  "basic":${part('basic').slice(9)},\n  "intention":${part('intention').slice(12)},\n  ${['educations', 'experiences', 'projects', 'papers', 'competitions', 'awards', 'studentWork', 'languages', 'certificates', 'familyMembers'].map((k) => `"${k}":[...]`).join(', ')}\n  "selfEvaluation":"自我评价原文"\n}`
+  return `{\n  ${['basic', 'intention', 'educations', 'experiences', 'projects', 'papers', 'competitions', 'awards', 'studentWork', 'languages', 'certificates', 'familyMembers'].map(part).join(',\n  ')},\n  "selfEvaluation":"自我评价原文"\n}`
 }
 
-const EXTRACT_SYSTEM = '你是简历信息结构化抽取引擎。只输出严格 JSON，不要 markdown 围栏、不要解释。不确定或原文没有的字段填空字符串/空数组，绝不编造。数组条目必须至少有一个非空字段，全空的条目不要输出。日期统一 YYYY-MM 或 YYYY-MM-DD（在读/未毕业的结束时间也照写原文日期，另把 endDate 字段写"至今"）。education=学历层次（本科/硕士研究生/博士研究生/专科），degree=学位（学士/硕士/博士），两者不要混淆。教育经历按时间从低到高排序；实习和工作经历都放 experiences（kind 字段区分 internship/fulltime）；论文/科研成果一律放 papers（description 填论文介绍/摘要/个人工作原文要点），不要把论文当成项目放进 projects。简历中的专业技能/技能清单（通常在简历末尾，形如"精通 Python，熟悉 PyTorch/Redis…"）：逐项拆到 itSkills（[{"skill":"Python"},{"skill":"PyTorch"}]），同时整理成连贯的一段话放入 selfEvaluation（若简历另有自我评价段落，则以自我评价优先）。'
+const EXTRACT_SYSTEM = '你是简历信息结构化抽取引擎。只输出严格 JSON，不要 markdown 围栏、不要解释。不确定或原文没有的字段填空字符串/空数组，绝不编造。数组条目必须至少有一个非空字段，全空的条目不要输出。日期原子统一 YYYY、YYYY-MM 或 YYYY-MM-DD；起止时间必须分别写入 startDate/endDate，不要输出拼接的日期区间；在读/在职/进行中的 endDate 写空字符串，并额外输出 endDateIsNow:true，不得把"至今"写进日期值。education=学历层次（本科/硕士研究生/博士研究生/专科），degree=学位（学士/硕士/博士），两者不要混淆。教育经历按时间从低到高排序；实习和工作经历都放 experiences（kind 字段区分 internship/fulltime）；论文/科研成果一律放 papers（description 填论文介绍/摘要/个人工作原文要点），不要把论文当成项目放进 projects。简历中的专业技能/技能清单（通常在简历末尾，形如"精通 Python，熟悉 PyTorch/Redis…"）：逐项拆到 itSkills（[{"skill":"Python"},{"skill":"PyTorch"}]），同时整理成连贯的一段话放入 selfEvaluation（若简历另有自我评价段落，则以自我评价优先）。'
 
 export async function extractProfile(text: string): Promise<{ ok: boolean; draft?: Partial<Profile>; message: string }> {
   const settings = await getSettings()
@@ -102,8 +106,10 @@ ${clipped}
 输出该 JSON。`,
       },
     ], { temperature: 0 })
-    const draft = sanitizeDraft(parseJsonLoose<Record<string, unknown>>(out))
-    postProcessDraft(draft as Record<string, unknown>, parseJsonLoose<Record<string, unknown>>(out))
+    const parsed = parseJsonLoose<Record<string, unknown>>(out)
+    const draft = sanitizeDraft(parsed)
+    postProcessDraft(draft as Record<string, unknown>, parsed)
+    normalizeProfileDates(draft)
     return { ok: true, draft, message: '抽取完成，请逐项校对' }
   } catch (e) {
     return { ok: false, message: `抽取失败：${(e as Error).message}` }
@@ -124,8 +130,11 @@ function sanitizeDraft(raw: Record<string, unknown>): Partial<Profile> {
             const v = (it as Record<string, unknown>)[f.k]
             item[f.k] = f.list ? (Array.isArray(v) ? v.map(str).filter(Boolean) : v ? String(v).split(/[、,，;；]/).map((s) => s.trim()).filter(Boolean) : []) : str(v)
           }
-          if (def.key === 'educations') {
-            item.endDateIsNow = /至今|现在/.test(str((it as Record<string, unknown>).endDate))
+          if (['educations', 'experiences', 'projects', 'studentWork'].includes(def.key)) {
+            const rawItem = it as Record<string, unknown>
+            item.endDateIsNow = rawItem.endDateIsNow === true
+              || String(rawItem.endDateIsNow).toLowerCase() === 'true'
+              || /至今|现在|在读|进行中|仍在职/.test(str(rawItem.endDate))
           }
           return item
         }).filter((it) => def.fields.some((f) => { // 丢弃全空条目（模型偶尔生成占位条目）
