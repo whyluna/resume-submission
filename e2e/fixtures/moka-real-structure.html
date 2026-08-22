@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>Moka 脱敏真实结构</title></head>
+<body>
+  <aside class="resume-side-nav">
+    <a class="nav-section">个人信息</a>
+    <a class="nav-section active">教育背景</a>
+    <a class="nav-section">项目经验</a>
+  </aside>
+  <main>
+    <section class="resume-panel">
+      <div class="section-header"><h2>教育背景</h2><button>+ 添加</button></div>
+      <div class="education-card">
+        <div class="semantic-row">
+          <div class="semantic-label">学校名称</div>
+          <div class="deep-control"><div><div><div><div><div><div>
+            <input class="moka-school" type="text" placeholder="请输入就读学校">
+          </div></div></div></div></div></div>
+        </div>
+        <div class="semantic-row">
+          <div class="semantic-label">专业名称</div>
+          <div class="deep-control"><div><div><div><div><div><div>
+            <input class="moka-major" type="text" placeholder="请输入专业名称">
+          </div></div></div></div></div></div>
+        </div>
+        <div class="semantic-row">
+          <div class="semantic-label">就读时间</div>
+          <div class="moka-date-parts">
+            <input class="start-year" type="text" readonly placeholder="年">
+            <input class="start-month" type="text" readonly placeholder="月">
+            <input class="end-year" type="text" readonly placeholder="年">
+            <input class="end-month" type="text" readonly placeholder="月">
+          </div>
+          <label><input type="checkbox" class="is-current">至今</label>
+        </div>
+      </div>
+    </section>
+    <section class="resume-panel">
+      <div class="section-header"><h2>项目经验</h2><button>+ 添加</button></div>
+      <div class="project-card">
+        <div class="semantic-row"><div class="semantic-label">项目名称</div><input type="text" placeholder="项目名称"></div>
+        <div class="semantic-row"><div class="semantic-label">项目描述</div><textarea placeholder="项目描述"></textarea></div>
+      </div>
+    </section>
+    <button class="save-resume">保存</button>
+  </main>
+</body>
+</html>
