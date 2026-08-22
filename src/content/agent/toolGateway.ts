@@ -280,4 +280,8 @@ export class AgentToolGateway {
   getObservation(): AgentPageObservation {
     return this.observation
   }
+
+  getModel(): PageModel {
+    return this.model
+  }
 }

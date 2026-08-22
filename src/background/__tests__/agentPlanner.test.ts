@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PageModel } from '@/shared/pageModel'
 import { DEFAULT_SETTINGS, createEmptyProfile } from '@/shared/storage'
 import { chat } from '../llm'
-import { planAgentShadow } from '../agentPlanner'
+import { planAgentRound, planAgentShadow } from '../agentPlanner'
 
 vi.mock('../llm', () => ({
   chat: vi.fn(),
@@ -70,5 +70,23 @@ describe('LLM-first shadow planner', () => {
     expect(result.rejected.length).toBeGreaterThan(0)
     expect(result.calls.every((call) => call.tool === 'mark_manual')).toBe(true)
     expect(result.coveredFieldIds.sort()).toEqual(['email', 'name'])
+  })
+
+  it('keeps inspection-only fields unresolved for an execution-driven repair round', async () => {
+    const profile = createEmptyProfile('测试档案')
+    profile.basic.name = '示例用户'
+    profile.basic.email = 'user@example.com'
+    vi.mocked(chat).mockImplementationOnce(async (_settings, messages) => {
+      const payload = JSON.parse(messages[1].content)
+      const emailFact = payload.facts.find((fact: { path: string }) => fact.path === 'basic.email')
+      return JSON.stringify({ calls: [
+        { callId: 'inspect', tool: 'inspect_control', reason: '先确认控件', args: { fieldId: 'name' } },
+        { callId: 'email', tool: 'fill_text_from_fact', reason: '邮箱', args: { fieldId: 'email', factIds: [emailFact.factId], transform: 'identity' } },
+      ] })
+    })
+    const result = await planAgentRound(model(), profile, { ...DEFAULT_SETTINGS, apiBaseUrl: 'https://example.com/v1', apiKey: 'test', model: 'test', privacyMode: 'labels-only' }, { round: 1 })
+    expect(result.calls.map((call) => call.tool)).toEqual(['inspect_control', 'fill_text_from_fact'])
+    expect(result.coveredFieldIds).toEqual(['email'])
+    expect(result.missingFieldIds).toEqual(['name'])
   })
 })

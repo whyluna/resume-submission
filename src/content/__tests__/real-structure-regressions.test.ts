@@ -139,6 +139,7 @@ describe('LLM review batching', () => {
       apiKey: 'test-key',
       model: 'test-model',
       privacyMode: 'labels-only',
+      agentMode: true,
       autoPager: false,
     }
 

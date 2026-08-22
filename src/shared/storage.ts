@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   model: '',
   privacyMode: 'with-values', // 2026-08-22 决策 D
+  agentMode: true,
   autoPager: false, // 半自动翻页
 }
 

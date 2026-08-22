@@ -58,6 +58,13 @@ export function SettingsTab() {
       <h2>填写偏好</h2>
       <div className="field">
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+          <input type="checkbox" checked={s.agentMode} onChange={(e) => set('agentMode', e.target.checked)} />
+          LLM Agent 主导填写（规则仅作提示，失败后按页面读回结果修复；推荐）
+        </label>
+        <span className="note">需要已配置的大模型 API。关闭后使用 V2/旧规则降级路径。</span>
+      </div>
+      <div className="field">
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
           <input type="checkbox" checked={s.autoPager} onChange={(e) => set('autoPager', e.target.checked)} />
           多页表单自动翻页（默认半自动：每页填完停下等你核对，自己点「下一步」后插件继续填下一页）
         </label>

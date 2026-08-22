@@ -4,7 +4,7 @@
 >
 > Date: 2026-08-22
 >
-> Status: approved direction, implementation pending
+> Status: A1/A3/A4 beta implemented; A2 generalization and A6 live acceptance in progress
 
 ## 1. Product decision
 

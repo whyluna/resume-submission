@@ -15,6 +15,7 @@ const settings: Settings = {
   apiKey: 'test-key',
   model: 'test-model',
   privacyMode: 'labels-only',
+  agentMode: true,
   autoPager: false,
 }
 

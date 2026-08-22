@@ -101,6 +101,14 @@ describe('V2 verified control executor', () => {
     expect((document.querySelector('#birth') as HTMLInputElement).value).toBe('2002-08')
   })
 
+  it('adapts a full canonical date to a native month input precision', async () => {
+    document.body.innerHTML = '<input id="birth-month" type="month">'
+    const birth = field('birth-month', 'date-single', '#birth-month', [['input', '#birth-month']])
+    const result = await executeControl({ field: birth, value: { kind: 'scalar', value: '2002-08-14' } })
+    expect(result.verified).toBe(true)
+    expect((document.querySelector('#birth-month') as HTMLInputElement).value).toBe('2002-08')
+  })
+
   it('projects an __range plan from structured profile dates before execution', async () => {
     document.body.innerHTML = `
       <section id="education"><div id="range">

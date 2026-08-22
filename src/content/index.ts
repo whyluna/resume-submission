@@ -1,6 +1,7 @@
 import type {
-  ExtMessage, FieldEl, FillResultItem, FillSummary, GroupEl, Profile, ScanRes, SectionKey, SemanticPlannerResponse,
+  AgentRoundResponse, ExtMessage, FieldEl, FillResultItem, FillSummary, GroupEl, Profile, ScanRes, SectionKey, SemanticPlannerResponse,
 } from '@/shared/types'
+import type { AgentToolCall, AgentToolResult } from '@/shared/agent'
 import { norm } from '@/shared/util'
 import { detectSite } from '@/shared/siteDetect'
 import { getActiveProfile, getSettings } from '@/shared/storage'
@@ -14,6 +15,7 @@ import { executeSemanticPlan } from './executorV2/executePlan'
 import { prepareRepeatEntries } from './adapters/repeatEntries'
 import { resolveElement } from './executorV2/dom'
 import { projectProfileForPage } from '@/shared/profileProjection'
+import { runAgent } from './agent/runAgent'
 
 declare const window: Window & { __rsAutofillInjected?: boolean }
 if (!window.__rsAutofillInjected) {
@@ -48,12 +50,10 @@ if (!window.__rsAutofillInjected) {
       return
     }
     if (msg.type === 'CONTENT_FILL') {
-      const adapterId = discoverPageModel(document, location.href).adapterId
-      const useV2 = adapterId === 'moka' || adapterId === 'dayee-wt' || adapterId === 'kuma'
-      ;(useV2 ? fillPlatformV2(adapterId) : fillAll()).then(sendResponse).catch((e) => {
+      fillCurrent().then(sendResponse).catch((e) => {
         const message = (e as Error).message
         setStatus(`填写中断：${message}`)
-        sendResponse(failedSummary(message, useV2 ? `${adapterId} V2` : 'legacy'))
+        sendResponse(failedSummary(message, '填写 Agent'))
       })
       return true
     }
@@ -66,6 +66,15 @@ if (!window.__rsAutofillInjected) {
       return true
     }
   })
+}
+
+async function fillCurrent(): Promise<FillSummary> {
+  const settings = await getSettings()
+  const agentReady = settings.agentMode && settings.privacyMode !== 'off' && !!settings.apiBaseUrl && !!settings.apiKey && !!settings.model
+  if (agentReady) return fillWithAgent()
+  const adapterId = discoverPageModel(document, location.href).adapterId
+  const useV2 = adapterId === 'moka' || adapterId === 'dayee-wt' || adapterId === 'kuma'
+  return useV2 ? fillPlatformV2(adapterId) : fillAll()
 }
 
 function failedSummary(message: string, siteName: string): FillSummary {
@@ -102,6 +111,87 @@ async function requestPagePlan(model: ReturnType<typeof discoverPageModel>): Pro
     response = await chrome.runtime.sendMessage(message) as SemanticPlannerResponse | undefined
   }
   return response ?? { ok: false, plan: [], rejected: 0, messages: [], error: '规划后台连续两次未响应，请刷新页面后重试' }
+}
+
+async function requestAgentRound(input: {
+  model: ReturnType<typeof discoverPageModel>
+  round: number
+  targetFieldIds: string[]
+  previousResults: AgentToolResult[]
+  previousIssues: string[]
+}): Promise<AgentRoundResponse> {
+  const message = { type: 'LLM_AGENT_ROUND', ...input } satisfies ExtMessage
+  const response = await chrome.runtime.sendMessage(message) as AgentRoundResponse | undefined
+  return response ?? {
+    ok: false, calls: [], coveredFieldIds: [], missingFieldIds: input.targetFieldIds,
+    rejected: [], observationFieldCount: 0, error: 'Agent 规划后台未响应，请刷新扩展后重试',
+  }
+}
+
+function agentFactIds(call: AgentToolCall | undefined): string[] {
+  if (!call) return []
+  const args = call.args as unknown as Record<string, unknown>
+  return [args.factId, args.startFactId, args.endFactId, args.currentFactId,
+    ...(Array.isArray(args.factIds) ? args.factIds : [])].filter((value): value is string => typeof value === 'string')
+}
+
+async function fillWithAgent(): Promise<FillSummary> {
+  const [stored, settings] = await Promise.all([getActiveProfile(), getSettings()])
+  if (!stored) throw new Error('还没有简历档案，请先在设置页创建')
+  const initialModel = discoverPageModel(document, location.href)
+  const fieldCount = initialModel.sections.reduce((total, section) => total + section.fields.length
+    + section.entries.reduce((sum, entry) => sum + entry.fields.length, 0), 0)
+  if (fieldCount === 0) throw new Error('Agent 未观察到可填写字段；请先运行“仅扫描表单”查看诊断')
+  const profile = projectProfileForPage(stored, initialModel)
+  setStatus(`LLM Agent：已观察 ${initialModel.sections.length} 个分区、${fieldCount} 个字段，开始规划…`)
+  const report = await runAgent(initialModel, profile, settings.privacyMode, requestAgentRound, document, setStatus)
+  const fields = new Map([...initialModel.sections, ...report.model.sections].flatMap((section) => [
+    ...section.fields,
+    ...section.entries.flatMap((entry) => entry.fields),
+  ]).map((field) => [field.id, field]))
+  const sections = [...initialModel.sections, ...report.model.sections]
+  const callById = new Map(report.calls.map((call) => [call.callId, call]))
+  const factPathById = new Map(report.observation.facts.map((fact) => [fact.factId, fact.path]))
+  const finalEntries = Array.from(report.finalByField.entries())
+  const items: FillResultItem[] = finalEntries.map(([fieldId, result]) => {
+    const field = fields.get(fieldId)
+    const call = callById.get(result.callId)
+    const root = field ? resolveElement(field.control.root, document) : null
+    const skipped = call?.tool === 'mark_skip'
+    const status = result.status === 'verified' ? 'filled' : skipped ? 'skipped' : result.status === 'manual' ? 'review' : 'failed'
+    if (root) highlight(root, status === 'filled' ? 'filled' : status === 'review' ? 'review' : 'failed')
+    const section = sections.find((candidate) => candidate.fields.some((item) => item.id === fieldId)
+      || candidate.entries.some((entry) => entry.fields.some((item) => item.id === fieldId)))
+    return {
+      fieldRef: { cssPath: field?.control.root.cssPath ?? '', index: field?.control.root.index ?? 0 },
+      sectionKey: section?.semanticCandidates[0] ?? 'unknown',
+      profilePath: agentFactIds(call).map((factId) => factPathById.get(factId) ?? factId).join(','),
+      label: field?.signals.label || field?.signals.placeholder || '未命名字段',
+      value: '', confidence: result.status === 'verified' ? 1 : 0,
+      via: 'llm',
+      reason: `Agent ${call?.tool ?? result.tool}：${result.evidence.join('；')}`,
+      status,
+      ...(status === 'failed' ? { error: result.evidence.join('；') } : {}),
+    }
+  })
+  const filled = items.filter((item) => item.status === 'filled').length
+  const review = items.filter((item) => item.status === 'review').length
+  const failed = items.filter((item) => item.status === 'failed').length
+  const adapterName = initialModel.adapterId === 'generic' ? 'Generic' : initialModel.adapterId
+  const summary: FillSummary = {
+    totalFields: items.length,
+    filled,
+    review,
+    failed,
+    unmatched: 0,
+    manual: review,
+    items,
+    siteName: `${adapterName} LLM Agent（${report.rounds} 轮，${report.calls.length} 个工具调用，拒绝 ${report.rejected.length}；未保存/未提交）`,
+    at: Date.now(),
+  }
+  setStatus(`LLM Agent：已验证 ${filled}，人工 ${review}，失败 ${failed}；未保存/未提交`)
+  renderSummary(summary)
+  return summary
 }
 
 async function fillPlatformV2(adapterId: 'moka' | 'dayee-wt' | 'kuma'): Promise<FillSummary> {

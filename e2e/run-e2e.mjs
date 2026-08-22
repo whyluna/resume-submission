@@ -17,6 +17,7 @@ import { launchExtensionBrowser, DIST } from './browser-launch.mjs'
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const PROFILE_DIR = mkdtempSync(path.join(tmpdir(), 'rs-e2e-bg-'))
 const FIXTURE = 'http://localhost:8000/bank-form.html'
+const AGENT_FIXTURE = 'http://localhost:8000/agent-form.html'
 
 const REAL = {
   key: process.env.RS_REAL_API_KEY,
@@ -79,6 +80,7 @@ const SETTINGS = {
   apiKey: isReal ? REAL.key : 'test-key',
   model: isReal ? REAL.model : 'mock-model',
   privacyMode: 'with-values',
+  agentMode: false,
   autoPager: false,
 }
 
@@ -143,6 +145,34 @@ try {
       }
     }
   }, { url, type })
+
+  // ============ 阶段零：实际扩展 Agent 闭环 ============
+  console.log('\n—— 阶段零：LLM Agent 工具闭环 ——')
+  const agentPage = await ctx.newPage()
+  await agentPage.goto(AGENT_FIXTURE, { waitUntil: 'load' })
+  await opt.evaluate(async () => {
+    const stored = await chrome.storage.local.get('rs.settings')
+    await chrome.storage.local.set({ 'rs.settings': { ...stored['rs.settings'], agentMode: true } })
+  })
+  const agentSummary = await sendToFixture('CONTENT_FILL', AGENT_FIXTURE)
+  const agentValues = await agentPage.evaluate(() => ({
+    name: document.querySelector('#agent_name')?.value,
+    idType: document.querySelector('#agent_id_type')?.selectedOptions?.[0]?.text,
+    idNumber: document.querySelector('#agent_id_number')?.value,
+    birth: document.querySelector('#agent_birth')?.value,
+    submitClicks: window.__submitClicks,
+  }))
+  ok('Agent·真实消息链路启用', agentSummary.siteName.includes('LLM Agent'), agentSummary.siteName)
+  ok('Agent·姓名文本工具', agentValues.name === '张三丰', agentValues.name ?? '')
+  ok('Agent·证件类型选择工具', agentValues.idType === '身份证', agentValues.idType ?? '')
+  ok('Agent·受限身份证事实本地解析', agentValues.idNumber === TEST_PROFILE.basic.idNumber, agentValues.idNumber ? '已本地填入' : '')
+  ok('Agent·出生年月日期工具', agentValues.birth === '2001-03', agentValues.birth ?? '')
+  ok('Agent·提交动作零点击', agentValues.submitClicks === 0, `点击 ${agentValues.submitClicks}`)
+  await agentPage.close()
+  await opt.evaluate(async () => {
+    const stored = await chrome.storage.local.get('rs.settings')
+    await chrome.storage.local.set({ 'rs.settings': { ...stored['rs.settings'], agentMode: false } })
+  })
 
   // ============ 阶段一：规则填写 + LLM 兜底 ============
   console.log('\n—— 阶段一：规则填写 ——')

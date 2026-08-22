@@ -5,6 +5,7 @@
 
 import type { PageModel } from './pageModel'
 import type { SemanticPlanItem } from './semanticPlan'
+import type { AgentToolCall, AgentToolResult, AgentTrace } from './agent'
 
 // ---------------- Profile：简历档案 ----------------
 
@@ -234,6 +235,7 @@ export interface Settings {
   apiKey: string
   model: string
   privacyMode: PrivacyMode // 默认 with-values（2026-08-22 决策）
+  agentMode: boolean // LLM 主导的受控工具循环；关闭时使用 V2/旧规则降级
   autoPager: boolean // 多页表单自动翻页；false=半自动（默认）
 }
 
@@ -397,6 +399,7 @@ export type ExtMessage =
   | { type: 'LLM_EXTRACT'; text: string } // options → bg：简历文本 → 结构化档案
   | { type: 'LLM_MATCH'; fields: LlmMatchFieldIn[]; profileLines: string[] } // content → bg：字段映射兜底
   | { type: 'LLM_PLAN_PAGE'; model: PageModel } // content → bg：V2 全分区语义规划
+  | { type: 'LLM_AGENT_ROUND'; model: PageModel; round: number; targetFieldIds: string[]; previousResults: AgentToolResult[]; previousIssues: string[] }
   | { type: 'CONTENT_SCAN' } // popup → content：仅扫描
   | { type: 'CONTENT_FILL' } // popup → content：扫描+匹配+填写
   | { type: 'CONTENT_FILL_V2' } // 调试/灰度：V2 PageModel → planner → verified executor
@@ -432,5 +435,16 @@ export interface SemanticPlannerResponse {
   plan: SemanticPlanItem[]
   rejected: number
   messages: string[]
+  error?: string
+}
+
+export interface AgentRoundResponse {
+  ok: boolean
+  calls: AgentToolCall[]
+  coveredFieldIds: string[]
+  missingFieldIds: string[]
+  rejected: string[]
+  trace?: AgentTrace
+  observationFieldCount: number
   error?: string
 }

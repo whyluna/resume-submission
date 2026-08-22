@@ -89,6 +89,36 @@ function buildV2Plan(prompt) {
   })
 }
 
+function buildAgentToolPlan(prompt) {
+  const payload = JSON.parse(prompt)
+  return {
+    calls: (payload.fields ?? []).map((field, index) => {
+      if (field.existingState === 'non-empty') return {
+        callId: `skip_${index}`, tool: 'mark_skip', reason: '已有值', args: { fieldId: field.fieldId, reason: '已有值不覆盖' },
+      }
+      const rule = field.ruleHints?.[0]
+      if (!rule) return {
+        callId: `manual_${index}`, tool: 'mark_manual', reason: '没有事实', args: { fieldId: field.fieldId, reason: '没有可靠事实' },
+      }
+      if (field.capabilities?.includes('fill-date')) return {
+        callId: `date_${index}`, tool: 'fill_date_from_facts', reason: '日期事实',
+        args: { fieldId: field.fieldId, startFactId: rule.factId, requestedShape: 'auto' },
+      }
+      if (field.capabilities?.includes('select-option')) return {
+        callId: `select_${index}`, tool: 'select_option_from_fact', reason: '选项事实',
+        args: { fieldId: field.fieldId, factId: rule.factId, match: 'synonym' },
+      }
+      if (field.capabilities?.includes('write-text')) return {
+        callId: `text_${index}`, tool: 'fill_text_from_fact', reason: '文本事实',
+        args: { fieldId: field.fieldId, factIds: [rule.factId], transform: 'identity' },
+      }
+      return {
+        callId: `manual_${index}`, tool: 'mark_manual', reason: '不支持的控件', args: { fieldId: field.fieldId, reason: '不支持的控件' },
+      }
+    }),
+  }
+}
+
 export function startMockLlm(port = 8787) {
   const server = http.createServer((req, res) => {
     if (!req.url?.includes('/chat/completions')) {
@@ -102,7 +132,8 @@ export function startMockLlm(port = 8787) {
       try {
         const parsed = JSON.parse(body)
         const last = parsed.messages?.at(-1)?.content ?? ''
-        if (last.includes('"task":"review-all-fields-in-section"')) content = JSON.stringify(buildV2Plan(last))
+        if (last.includes('"mode":"agent-tool-round"') || last.includes('"mode":"agent-repair-round"')) content = JSON.stringify(buildAgentToolPlan(last))
+        else if (last.includes('"task":"review-all-fields-in-section"')) content = JSON.stringify(buildV2Plan(last))
         else if (last.includes('任务A')) content = JSON.stringify(EXTRACT)
         else if (last.includes('任务B')) content = JSON.stringify(buildReviewPlan(last))
       } catch { /* 默认 ok */ }

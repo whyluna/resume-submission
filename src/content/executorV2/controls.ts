@@ -22,6 +22,22 @@ function scalarValue(request: ControlExecutionRequest): string | null {
   return request.value.kind === 'scalar' ? request.value.value : null
 }
 
+function dateValueForElement(value: string, element: Element): { ok: boolean; value: string; reason?: string } {
+  const canonical = normalizeDateValue(value)
+  if (!canonical.valid || canonical.ongoing || !canonical.value) return { ok: false, value: '', reason: '日期值无法规范化' }
+  if (!(element instanceof HTMLInputElement)) return { ok: true, value: canonical.value }
+  if (element.type === 'month') {
+    const match = canonical.value.match(/^\d{4}-\d{2}/)
+    return match ? { ok: true, value: match[0] } : { ok: false, value: '', reason: '月份控件需要 YYYY-MM' }
+  }
+  if (element.type === 'date') {
+    return /^\d{4}-\d{2}-\d{2}$/.test(canonical.value)
+      ? { ok: true, value: canonical.value }
+      : { ok: false, value: '', reason: '日期控件需要完整年月日' }
+  }
+  return { ok: true, value: canonical.value }
+}
+
 function partElement(group: ControlGroup, role: ControlPartRole, doc: Document): Element | null {
   const part = group.parts.find((candidate) => candidate.role === role)
   return part ? resolveElement(part.ref, doc) : null
@@ -257,12 +273,12 @@ export async function executeControl(request: ControlExecutionRequest, doc: Docu
   if (group.kind === 'date-range') return executeDateRange(request, value, doc)
   if (group.kind === 'date-single') {
     const input = partElement(group, 'input', doc) ?? root
-    const canonical = normalizeDateValue(value)
-    if (!canonical.valid || canonical.ongoing || !canonical.value) {
-      return result(request.field.id, { state: 'manual', failureClass: 'validation', message: '日期值无法规范化，未写入页面' })
+    const target = dateValueForElement(value, input)
+    if (!target.ok) {
+      return result(request.field.id, { state: 'manual', failureClass: 'validation', message: `${target.reason}，未写入页面` })
     }
-    const write = writeText(input, canonical.value)
-    return write.written && write.actual === canonical.value
+    const write = writeText(input, target.value)
+    return write.written && write.actual === target.value
       ? result(request.field.id, { state: 'verified', written: true, committed: true, verified: true, message: '日期已写入并读回' })
       : result(request.field.id, { written: write.written, failureClass: 'control', message: '日期写入后读回不一致' })
   }
@@ -339,7 +355,9 @@ export function verifyControlValue(field: PageField, expected: ProjectedValue, d
   const actual = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
     ? target.value
     : (target as HTMLElement).textContent ?? ''
-  const normalizedExpected = group.kind === 'date-single' ? normalizeDateValue(value).value : value
+  const projected = group.kind === 'date-single' ? dateValueForElement(value, target) : { ok: true, value }
+  if (!projected.ok) return result(field.id, { state: 'manual', failureClass: 'validation', message: projected.reason ?? '日期精度不兼容' })
+  const normalizedExpected = projected.value
   const verified = actual === normalizedExpected
   return verified
     ? result(field.id, { state: 'verified', written: true, committed: true, verified: true, message: '字段值复验通过' })

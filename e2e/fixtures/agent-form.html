@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Agent 最小闭环表单</title></head>
+<body>
+  <section id="personal-section">
+    <h2>个人信息</h2>
+    <div class="semantic-row"><span class="semantic-label">姓名</span><input id="agent_name"></div>
+    <div class="semantic-row"><span class="semantic-label">证件类型</span><select id="agent_id_type">
+      <option value="">请选择</option><option value="id">身份证</option><option value="passport">护照</option>
+    </select></div>
+    <div class="semantic-row"><span class="semantic-label">证件号码</span><input id="agent_id_number"></div>
+    <div class="semantic-row"><span class="semantic-label">出生日期</span><input id="agent_birth" type="month"></div>
+    <button id="agent_submit" class="submit" type="button">提交</button>
+  </section>
+  <script>
+    window.__submitClicks = 0
+    document.querySelector('#agent_submit').addEventListener('click', () => { window.__submitClicks += 1 })
+  </script>
+</body>
+</html>
