@@ -52,6 +52,19 @@ describe('one-shot semantic review validation', () => {
     expect(result.rejected.join(' ')).toMatch(/结构语义|固定选项|受限/)
   })
 
+  it('rejects every restricted fact from a combobox even when compound discovery is unavailable', () => {
+    const idType = field('opaque-id-type', 'custom-select')
+    idType.controlKind = 'combobox'
+    idType.allowedTransforms = ['enum-normalize', 'identity']
+    const page = ir([idType], [fact('basic.idNumber', 'text', 'restricted')])
+    const result = validateOneShotSemanticPlan([{
+      fieldId: 'opaque-id-type', decision: 'fill', profilePaths: ['basic.idNumber'],
+      transform: 'identity', confidence: 0.9, reason: '错误号码',
+    }], page)
+    expect(result.accepted).toHaveLength(0)
+    expect(result.rejected.join(' ')).toContain('受限')
+  })
+
   it('enforces repeated-entry routing and exact date transform shape', () => {
     const date = field('project-date', 'date-range-parts')
     date.entryId = 'entry-1'

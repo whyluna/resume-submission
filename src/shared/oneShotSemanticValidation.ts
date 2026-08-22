@@ -35,8 +35,8 @@ function semanticError(item: SemanticPlanItem, field: FormFieldIR, facts: AgentF
   if (item.decision === 'keep-rule' && item.profilePaths.some((path) => !field.ruleHints.some((hint) => hint.path === path))) {
     return 'keep-rule 没有保留规则候选'
   }
+  if (field.capabilities.includes('select-option') && facts.some((fact) => fact.sensitivity === 'restricted')) return '选择控件禁止使用受限事实'
   if (FIXED_SELECTS.has(field.controlKind) && facts.some((fact) => fact.valueType !== 'enum')) return '固定选项控件只接受枚举事实'
-  if (FIXED_SELECTS.has(field.controlKind) && facts.some((fact) => fact.sensitivity === 'restricted')) return '选择控件禁止使用受限事实'
   if (field.capabilities.includes('fill-date') && facts.some((fact) => !['date', 'date-range', 'boolean'].includes(fact.valueType))) {
     return '日期组件引用了非日期事实'
   }

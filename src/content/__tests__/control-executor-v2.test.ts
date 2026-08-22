@@ -53,6 +53,23 @@ describe('V2 verified control executor', () => {
     expect(saveClicks).toBe(0)
   })
 
+  it('uses a complete press sequence for dropdowns that listen on mousedown instead of click', async () => {
+    document.body.innerHTML = `
+      <div id="combo" role="combobox" aria-controls="options"><span class="selected-label"></span><input id="search"></div>
+      <div id="options" role="listbox" style="display:none"><div role="option" id="target">身份证</div></div>`
+    const root = document.querySelector('#combo') as HTMLElement
+    const overlay = document.querySelector('#options') as HTMLElement
+    const option = document.querySelector('#target') as HTMLElement
+    root.addEventListener('mousedown', () => { overlay.style.display = 'block' })
+    option.addEventListener('mousedown', () => {
+      ;(root.querySelector('.selected-label') as HTMLElement).textContent = '身份证'
+      overlay.style.display = 'none'
+    })
+    const combo = field('id-type', 'combobox', '#combo', [['trigger', '#combo'], ['input', '#search']])
+    const result = await executeControl({ field: combo, value: { kind: 'scalar', value: '身份证' } })
+    expect(result).toMatchObject({ state: 'verified', committed: true, verified: true })
+  })
+
   it('does not treat typed search text as a selected option', async () => {
     document.body.innerHTML = `
       <div id="combo" role="combobox" aria-controls="options"><input id="search"></div>

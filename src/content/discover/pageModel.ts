@@ -384,6 +384,54 @@ function datePartToken(record: FieldRecord): string {
   ].filter(Boolean).join(' '))
 }
 
+function commonRecordAncestor(records: FieldRecord[]): Element | null {
+  if (records.length === 0) return null
+  for (let node: Element | null = records[0].identity; node; node = node.parentElement) {
+    if (records.every((record) => node?.contains(record.identity))) return node
+  }
+  return null
+}
+
+function leafSemanticTexts(root: Element): string[] {
+  const direct = Array.from(root.childNodes)
+    .filter((node) => node.nodeType === 3)
+    .map((node) => cleanText(node.textContent))
+  const leaves = Array.from(root.querySelectorAll('*'))
+    .filter((element) => !element.matches(CONTROL_SELECTOR) && !element.querySelector(CONTROL_SELECTOR))
+    .map((element) => cleanText(element.textContent))
+  return Array.from(new Set([...direct, ...leaves].filter((text) => text && text.length <= 60)))
+}
+
+function dateScopeLabel(root: Element | null): string {
+  if (!root) return ''
+  return leafSemanticTexts(root).find((text) => /日期|时间|年月|出生|入学|毕业|起止|获奖|任职/.test(norm(text))) ?? ''
+}
+
+function semanticDateAncestorGroups(records: FieldRecord[]): FieldRecord[][] {
+  const groups: FieldRecord[][] = []
+  const roots = new Set<Element>()
+  const currentToggle = (record: FieldRecord) => record.field.control.kind === 'checkbox'
+    && /至今|在读|在职|进行中/.test(datePartToken(record))
+  const datePartLike = (record: FieldRecord) => ['native-select', 'custom-select', 'combobox', 'text'].includes(record.field.control.kind)
+    && /年|月|日|yyyy|mm|dd|year|month|day|start|end|开始|结束|日期|时间/.test(datePartToken(record))
+  const supported = (record: FieldRecord) => datePartLike(record) || currentToggle(record)
+  for (const record of records.filter((candidate) => datePartLike(candidate))) {
+    let node = record.identity.parentElement
+    for (let depth = 0; node && depth < 9; depth++) {
+      if (node.matches(NAV_SELECTOR)) break
+      const current = node
+      const inside = records.filter((candidate) => supported(candidate) && current.contains(candidate.identity))
+      const toggles = inside.filter(currentToggle)
+      const dateControls = inside.filter((candidate) => !toggles.includes(candidate))
+      node = current.parentElement
+      if (![4, 6].includes(dateControls.length) || !dateScopeLabel(current)) continue
+      if (!roots.has(current)) { roots.add(current); groups.push(inside) }
+      break
+    }
+  }
+  return groups
+}
+
 function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): FieldRecord[] {
   const byRow = new Map<Element, FieldRecord[]>()
   for (const record of records) {
@@ -401,14 +449,16 @@ function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): F
     byLabel.set(label, list)
   }
   const groupKey = (group: FieldRecord[]) => group.map((record) => record.field.id).sort().join('|')
-  const candidateGroups = [...byRow.values(), ...byLabel.values()]
+  const candidateGroups = [...byRow.values(), ...byLabel.values(), ...semanticDateAncestorGroups(records)]
     .filter((group) => group.length >= 2)
     .filter((group, index, groups) => groups.findIndex((candidate) => groupKey(candidate) === groupKey(group)) === index)
   const consumed = new Set<FieldRecord>()
   const combined: FieldRecord[] = []
   for (const rowRecords of candidateGroups) {
     if (rowRecords.some((record) => consumed.has(record))) continue
-    const signal = norm(rowRecords.flatMap((record) => [record.field.signals.label, ...record.field.signals.labelNear]).join(' '))
+    const common = commonRecordAncestor(rowRecords)
+    const scopeLabel = dateScopeLabel(common)
+    const signal = norm([...rowRecords.flatMap((record) => [record.field.signals.label, ...record.field.signals.labelNear]), scopeLabel].join(' '))
     if (!/日期|时间|年月|出生|入学|毕业|起止|获奖|任职/.test(signal)) continue
     const toggle = rowRecords.find((record) => record.field.control.kind === 'checkbox'
       && /至今|在读|在职|进行中/.test(datePartToken(record)))
@@ -430,17 +480,19 @@ function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): F
         ? ['start-year', 'start-month', 'end-year', 'end-month']
         : twoPartRange ? ['start', 'end'] : ['year', 'month']
     const controls = [...dateRecords.map((record) => record.signalElement), ...(toggle ? [toggle.signalElement] : [])]
-    const ancestorChain: Element[] = []
-    for (let node: Element | null = dateRecords[0].identity; node; node = node.parentElement) ancestorChain.push(node)
-    const row = ancestorChain.find((candidate) => dateRecords.every((record) => candidate.contains(record.identity)))
-      ?? dateRecords[0].row ?? dateRecords[0].identity
+    const row = commonRecordAncestor(dateRecords) ?? dateRecords[0].row ?? dateRecords[0].identity
     const parts = dateRecords.map((record, index) => part(roles[index], record.identity, record.field.control.kind))
     if (toggle) parts.push(part('current-toggle', toggle.identity, toggle.field.control.kind))
     const first = dateRecords[0]
     const control = makeGroup(kind, row, controls, parts, 'generic-semantic-date-group')
     const idSource = [sectionTitle, kind, control.id].join('|')
+    const signals = scopeLabel ? {
+      ...first.field.signals,
+      label: scopeLabel,
+      labelNear: Array.from(new Set([first.field.signals.label, ...first.field.signals.labelNear].filter((value) => value && value !== scopeLabel))),
+    } : first.field.signals
     combined.push({
-      field: { id: `field_${hashSig(idSource)}`, signals: first.field.signals, control },
+      field: { id: `field_${hashSig(idSource)}`, signals, control },
       row,
       identity: row,
       signalElement: first.signalElement,
@@ -453,19 +505,31 @@ function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): F
 
 function assignCompoundGroups(records: FieldRecord[]): void {
   const byRow = new Map<Element, FieldRecord[]>()
+  const byLabel = new Map<string, FieldRecord[]>()
   for (const record of records) {
-    if (!record.row) continue
-    const list = byRow.get(record.row) ?? []
-    list.push(record)
-    byRow.set(record.row, list)
+    if (record.row) {
+      const list = byRow.get(record.row) ?? []
+      list.push(record)
+      byRow.set(record.row, list)
+    }
+    const label = norm(record.field.signals.label)
+    if (label && /证件|电话|手机|区号|薪资|工资|成绩|分数|排名/.test(label)) {
+      const list = byLabel.get(label) ?? []
+      list.push(record)
+      byLabel.set(label, list)
+    }
   }
-  for (const [row, group] of byRow) {
-    if (group.length < 2) continue
-    const groupId = `compound_${makeRef(row).signature}`
+  const assigned = new Set<FieldRecord>()
+  const groups = [...byRow.values(), ...byLabel.values()]
+  for (const group of groups) {
+    if (group.length < 2 || group.length > 4 || group.some((record) => assigned.has(record))) continue
+    const root = commonRecordAncestor(group) ?? group[0].row ?? group[0].identity
+    const groupId = `compound_${makeRef(root).signature}`
     group.forEach((record, index) => {
       record.field.compoundGroupId = groupId
       record.field.compoundIndex = index
       record.field.compoundSize = group.length
+      assigned.add(record)
     })
   }
 }
@@ -567,7 +631,7 @@ export function discoverPageModel(doc: Document = document, url: string = locati
   const sectionRoots = new Set(discovered.map((section) => section.root))
   const sections: PageSection[] = discovered.map((section) => {
     const repeat = section.semanticCandidates.some((candidate) => REPEAT_SECTIONS.has(candidate))
-    const explicitRoots = entryRoots(section.root)
+    const explicitRoots = repeat ? entryRoots(section.root) : []
     const roots = repeat && explicitRoots.length === 0 && section.root.querySelector(CONTROL_SELECTOR)
       ? [section.root]
       : explicitRoots

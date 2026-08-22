@@ -7,6 +7,7 @@ import { prepareRepeatEntries } from '../adapters/repeatEntries'
 import { createEmptyProfile } from '@/shared/storage'
 import { generateRuleCandidateIndex } from '../planner/ruleCandidates'
 import { executeControl } from '../executorV2/controls'
+import { executeSemanticPlan } from '../executorV2/executePlan'
 import { projectDateRange } from '../planner/projection'
 
 const FIXTURE_DIR = path.join(process.cwd(), 'e2e', 'fixtures')
@@ -120,6 +121,18 @@ describe('PageModel V2 discovery', () => {
     expect(education?.entries[0].fields).toHaveLength(1)
   })
 
+  it('never turns a card-looking container inside a non-repeat basic section into a profile entry', () => {
+    document.body.innerHTML = `<section class="resume-section"><h2>个人信息</h2>
+      <div class="profile-card"><div><label>姓名</label><input placeholder="请输入"></div></div>
+    </section>`
+    const model = discoverPageModel(document, 'https://talent.alibaba.com/personal/campus-resume')
+    const basic = model.sections.find((section) => section.semanticCandidates.includes('basic'))
+    expect(basic?.entries).toHaveLength(0)
+    expect(basic?.fields).toHaveLength(1)
+    const candidates = generateRuleCandidateIndex(model, createEmptyProfile('测试档案'))
+    expect(basic && candidates[basic.fields[0].id][0].profilePath).toBe('basic.name')
+  })
+
   it('models same-label document type and number controls as a compound row', () => {
     document.body.innerHTML = `<section><h2>个人信息</h2>
       <div class="semantic-row"><span class="semantic-label">证件号码</span>
@@ -131,6 +144,22 @@ describe('PageModel V2 discovery', () => {
     const fields = model.sections[0].fields
     expect(fields).toHaveLength(2)
     expect(fields.map((field) => field.compoundIndex)).toEqual([0, 1])
+    expect(fields[0].compoundGroupId).toBe(fields[1].compoundGroupId)
+    const candidates = generateRuleCandidateIndex(model, createEmptyProfile('测试档案'))
+    expect(candidates[fields[0].id][0].profilePath).toBe('basic.idType')
+    expect(candidates[fields[1].id][0].profilePath).toBe('basic.idNumber')
+  })
+
+  it('models a same-label compound row even when the site uses opaque cell classes', () => {
+    document.body.innerHTML = `<section><h2>个人信息</h2><div class="opaque-document-shell">
+      <span>证件号码</span>
+      <div class="opaque-cell-a"><div role="combobox"><input placeholder="请选择证件"></div></div>
+      <div class="opaque-cell-b"><input type="text" placeholder="请输入号码"></div>
+    </div></section>`
+    const model = discoverPageModel(document, 'https://example.com/resume')
+    const fields = model.sections[0].fields
+    expect(fields).toHaveLength(2)
+    expect(fields[0].compoundGroupId).toBeTruthy()
     expect(fields[0].compoundGroupId).toBe(fields[1].compoundGroupId)
     const candidates = generateRuleCandidateIndex(model, createEmptyProfile('测试档案'))
     expect(candidates[fields[0].id][0].profilePath).toBe('basic.idType')
@@ -171,6 +200,52 @@ describe('PageModel V2 discovery', () => {
     const education = model.sections.find((section) => section.title === '教育背景')
     expect(education?.entries[0].fields).toHaveLength(1)
     expect(education?.entries[0].fields[0].control.kind).toBe('date-range-parts')
+  })
+
+  it('groups four custom date selects by their smallest date-labelled ancestor despite per-cell year/month labels', () => {
+    const part = (label: string) => `<div class="opaque-cell"><span>${label}</span><div class="opaque-picker"><input role="combobox" placeholder="请选择"></div></div>`
+    document.body.innerHTML = `<section><h2>教育背景</h2><div class="opaque-period-shell">
+      <div class="opaque-period-title">就读时间</div>
+      ${part('年')}${part('月')}<i>-</i>${part('年')}${part('月')}
+    </div></section>`
+    const model = discoverPageModel(document, 'https://app.mokahr.com/resume')
+    const education = model.sections.find((section) => section.semanticCandidates.includes('educations'))
+    expect(education?.entries[0].fields).toHaveLength(1)
+    expect(education?.entries[0].fields[0].control.kind).toBe('date-range-parts')
+    expect(education?.entries[0].fields[0].control.parts.map((item) => item.role))
+      .toEqual(['start-year', 'start-month', 'end-year', 'end-month'])
+  })
+
+  it('executes a discovered opaque four-part custom date range as four separate option selections', async () => {
+    const part = (slot: string, label: string, value: string) => `<div class="opaque-cell" data-part="${slot}"><span>${label}</span>
+      <input role="combobox" aria-controls="${slot}-options" placeholder="请选择">
+      <div id="${slot}-options" role="listbox" style="display:none"><div role="option">${value}</div></div></div>`
+    document.body.innerHTML = `<section><h2>教育背景</h2><div class="opaque-period-shell">
+      <div class="opaque-period-title">就读时间</div>
+      ${part('sy', '年', '2022')}${part('sm', '月', '09')}<i>-</i>${part('ey', '年', '2026')}${part('em', '月', '06')}
+    </div></section>`
+    for (const slot of ['sy', 'sm', 'ey', 'em']) {
+      const cell = document.querySelector(`[data-part="${slot}"]`) as HTMLElement
+      const input = cell.querySelector('input') as HTMLInputElement
+      const overlay = cell.querySelector('[role="listbox"]') as HTMLElement
+      const option = cell.querySelector('[role="option"]') as HTMLElement
+      input.addEventListener('mousedown', () => { overlay.style.display = 'block' })
+      option.addEventListener('mousedown', () => { input.value = option.textContent ?? ''; overlay.style.display = 'none' })
+    }
+    const model = discoverPageModel(document, 'https://app.mokahr.com/resume')
+    const date = model.sections[0].entries[0].fields.find((field) => field.control.kind === 'date-range-parts')
+    expect(date).toBeDefined()
+    const profile = createEmptyProfile('测试档案')
+    profile.educations[0].startDate = '2022-09'
+    profile.educations[0].endDate = '2026-06'
+    const report = await executeSemanticPlan(model, profile, [{
+      fieldId: date!.id, decision: 'fill',
+      profilePaths: ['educations[0].startDate', 'educations[0].endDate'],
+      transform: 'split-date-parts', confidence: 1, reason: '四段日期',
+    }], document)
+    expect(report).toMatchObject({ verified: 1, failed: 0 })
+    expect(['sy', 'sm', 'ey', 'em'].map((slot) => (document.querySelector(`[data-part="${slot}"] input`) as HTMLInputElement).value))
+      .toEqual(['2022', '09', '2026', '06'])
   })
 
   it('keeps field and control IDs stable when a custom control gains selected text and state classes', () => {

@@ -87,21 +87,100 @@ function chooseNativeSelect(select: HTMLSelectElement, value: string): boolean {
   return true
 }
 
-function overlayFor(root: Element, doc: Document): Element | null {
-  const controlId = root.getAttribute('aria-controls') || root.querySelector('[aria-controls]')?.getAttribute('aria-controls')
+function overlayCandidates(doc: Document): Element[] {
+  return Array.from(doc.querySelectorAll([
+    '[role="listbox"]', '.ant-select-dropdown', '.el-select-dropdown', '.arco-select-popup',
+    '.kuma-select2-dropdown', '.select2-dropdown', '.moka-search-dropdown', '[class*="select-dropdown"]',
+    '[class*="dropdown-menu"]', '[class*="picker-dropdown"]',
+  ].join(','))).filter(visible)
+}
+
+function overlayFor(root: Element, doc: Document, previous: Set<Element> = new Set()): Element | null {
+  const controlId = root.getAttribute('aria-controls') || root.getAttribute('aria-owns')
+    || root.querySelector('[aria-controls]')?.getAttribute('aria-controls')
+    || root.querySelector('[aria-owns]')?.getAttribute('aria-owns')
   if (controlId) {
     const linked = doc.getElementById(controlId)
     if (linked && visible(linked)) return linked
   }
-  const candidates = Array.from(doc.querySelectorAll([
-    '[role="listbox"]', '.ant-select-dropdown', '.el-select-dropdown', '.arco-select-popup',
-    '.kuma-select2-dropdown', '.select2-dropdown', '.moka-search-dropdown', '[class*="dropdown-menu"]',
-  ].join(','))).filter(visible)
-  return candidates.at(-1) ?? null
+  const candidates = overlayCandidates(doc)
+  const fresh = candidates.find((candidate) => !previous.has(candidate))
+  return fresh ?? (previous.size === 0 ? candidates.at(-1) ?? null : null)
+}
+
+function dangerousPressTarget(el: Element): boolean {
+  const actionable = el.closest('button, input, a')
+  if (actionable instanceof HTMLButtonElement) return ['submit', 'reset'].includes((actionable.type || 'submit').toLowerCase())
+  if (actionable instanceof HTMLInputElement) return ['submit', 'reset', 'image'].includes(actionable.type)
+  if (actionable instanceof HTMLAnchorElement) {
+    const href = actionable.getAttribute('href')
+    return !!href && href !== '#' && !href.startsWith('javascript:')
+  }
+  return false
+}
+
+function pressSequence(el: Element): boolean {
+  const view = el.ownerDocument.defaultView
+  const fireMouse = (type: string, detail = 0) => {
+    try {
+      const MouseCtor = view?.MouseEvent
+      if (MouseCtor) {
+        el.dispatchEvent(new MouseCtor(type, { bubbles: true, cancelable: true, composed: true, detail, view }))
+        return
+      }
+    } catch { /* use generic event below */ }
+    const event = el.ownerDocument.createEvent('Event')
+    event.initEvent(type, true, true)
+    el.dispatchEvent(event)
+  }
+  const firePointer = (type: string) => {
+    const PointerCtor = view?.PointerEvent
+    if (!PointerCtor) return
+    try {
+      el.dispatchEvent(new PointerCtor(type, {
+        bubbles: true, cancelable: true, composed: true,
+        pointerId: 1, isPrimary: true, pointerType: 'mouse',
+      }))
+    } catch { /* mouse sequence below remains the fallback */ }
+  }
+  firePointer('pointerover')
+  fireMouse('mouseover')
+  firePointer('pointerdown')
+  fireMouse('mousedown', 1)
+  firePointer('pointerup')
+  fireMouse('mouseup', 1)
+  try {
+    if (el.isConnected && typeof (el as HTMLElement).click === 'function') (el as HTMLElement).click()
+    else fireMouse('click', 1)
+  } catch { fireMouse('click', 1) }
+  return true
+}
+
+function customTriggerCandidates(root: Element, group: ControlGroup, doc: Document): Element[] {
+  const explicit = partElement(group, 'trigger', doc)
+  const selectors = [
+    '.ant-select-selector', '.el-input__wrapper', '.arco-select-view', '.kuma-select2-selection',
+    '[aria-haspopup="listbox"]', '[role="combobox"]', '[class*="select-wrapper"]', '[class*="selectWrapper"]',
+  ].join(',')
+  const preferred = root.matches(selectors) ? root : root.querySelector(selectors)
+  const candidates = [preferred, partElement(group, 'input', doc), explicit, root]
+    .filter((candidate): candidate is Element => !!candidate && !dangerousPressTarget(candidate))
+  return Array.from(new Set(candidates))
+}
+
+async function openCustomOverlay(root: Element, group: ControlGroup, doc: Document, previous = new Set(overlayCandidates(doc))): Promise<Element | null> {
+  for (const trigger of customTriggerCandidates(root, group, doc)) {
+    ;(trigger as HTMLElement).focus?.()
+    pressSequence(trigger)
+    const opened = await waitFor(() => !!overlayFor(root, doc, previous), 450)
+    if (opened) return overlayFor(root, doc, previous)
+  }
+  return overlayFor(root, doc, previous)
 }
 
 function optionFor(overlay: Element, value: string): Element | null {
-  const options = Array.from(overlay.querySelectorAll('[role="option"], option, li, [class*="option"]')).filter(visible)
+  const options = Array.from(overlay.querySelectorAll('[role="option"], option, li, [class*="option"]'))
+    .filter((option) => visible(option) && !dangerousPressTarget(option))
   const exact = options.find((item) => norm(item.textContent ?? '') === norm(value))
   return exact ?? options.find((item) => isSynonym(item.textContent ?? '', value))
     ?? options.find((item) => valueMatches(item.textContent ?? '', value)) ?? null
@@ -138,14 +217,20 @@ export async function inspectControlOptions(
     return { options: group.options.slice(0, 50), opened: false, message: '该控件没有动态选项' }
   }
 
-  const trigger = partElement(group, 'trigger', doc) ?? root
   const inputPart = partElement(group, 'input', doc)
   const input = inputPart instanceof HTMLInputElement ? inputPart : inputPart?.querySelector('input') ?? root.querySelector('input')
   const previous = input instanceof HTMLInputElement ? input.value : ''
-  ;(trigger as HTMLElement).click()
+  const visibleBefore = new Set(overlayCandidates(doc))
+  let overlay = await openCustomOverlay(root, group, doc, visibleBefore)
   if (query && input instanceof HTMLInputElement) setNativeValue(input, query)
-  const opened = await waitFor(() => !!overlayFor(root, doc), 1000)
-  const overlay = overlayFor(root, doc)
+  if (query) {
+    await waitFor(() => {
+      const active = overlayFor(root, doc, visibleBefore)
+      return !!active && (optionTexts(active).length > 0 || !!active.textContent?.trim())
+    }, 1200)
+    overlay = overlayFor(root, doc, visibleBefore)
+  }
+  const opened = !!overlay
   const options = overlay ? optionTexts(overlay).slice(0, 50) : []
   if (input instanceof HTMLInputElement) {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -157,27 +242,34 @@ export async function inspectControlOptions(
 async function chooseCustom(fieldId: string, group: ControlGroup, value: string, doc: Document): Promise<ControlExecutionResult> {
   const root = resolveElement(group.root, doc)
   if (!root) return result(fieldId, { failureClass: 'stale-ref', message: '自定义下拉引用已失效' })
-  const trigger = partElement(group, 'trigger', doc) ?? root
   const inputPart = partElement(group, 'input', doc)
   const input = inputPart instanceof HTMLInputElement ? inputPart : inputPart?.querySelector('input') ?? root.querySelector('input')
-  ;(trigger as HTMLElement).click()
+  const visibleBefore = new Set(overlayCandidates(doc))
+  let overlay = await openCustomOverlay(root, group, doc, visibleBefore)
   if (input instanceof HTMLInputElement) {
     setNativeValue(input, value)
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   }
-  const opened = await waitFor(() => !!overlayFor(root, doc), 1000)
-  const overlay = overlayFor(root, doc)
-  if (!opened || !overlay) {
+  const optionReady = await waitFor(() => {
+    const active = overlayFor(root, doc, visibleBefore)
+    return !!active && !!optionFor(active, value)
+  }, 2500)
+  overlay = overlayFor(root, doc, visibleBefore)
+  if (!overlay) {
     return result(fieldId, { written: input instanceof HTMLInputElement, failureClass: 'control', message: '下拉弹层未打开，输入文字不计为选中' })
   }
-  const optionReady = await waitFor(() => !!optionFor(overlay, value), 1500)
   const option = optionFor(overlay, value)
   if (!optionReady || !option) {
     input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     return result(fieldId, { written: input instanceof HTMLInputElement, failureClass: 'validation', message: '关联弹层中没有匹配选项' })
   }
-  ;(option as HTMLElement).click()
-  const committed = await waitFor(() => valueMatches(selectedText(root), value), 1500)
+  pressSequence(option)
+  const committed = await waitFor(() => {
+    if (valueMatches(selectedText(root), value)) return true
+    const expanded = root.getAttribute('aria-expanded') ?? root.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')
+    const closed = !visible(overlay) || expanded === 'false'
+    return closed && input instanceof HTMLInputElement && valueMatches(input.value, value)
+  }, 2000)
   return committed
     ? result(fieldId, { state: 'verified', written: true, committed: true, verified: true, message: '下拉选项已选择并读回' })
     : result(fieldId, { written: true, failureClass: 'control', message: '点击选项后未读到已选状态' })

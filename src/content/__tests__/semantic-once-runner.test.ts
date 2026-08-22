@@ -29,12 +29,13 @@ function response(plan: SemanticPlanItem[], sources: OneShotSemanticResponse['so
 
 describe('single semantic review runner', () => {
   it('uses rule candidates as LLM evidence, executes locally, then performs final readback', async () => {
-    document.body.innerHTML = `<section><h2>个人信息</h2><div class="semantic-row">
+    document.body.innerHTML = `<section><h2>个人信息</h2><div class="profile-card"><div class="semantic-row">
       <span class="semantic-label">姓名</span><input placeholder="请输入姓名">
-    </div></section>`
+    </div></div></section>`
     const profile = createEmptyProfile('测试档案')
     profile.basic.name = '示例用户'
     const model = discoverPageModel(document, 'https://example.com/resume')
+    expect(model.sections[0].entries).toHaveLength(0)
     let requests = 0
     const report = await runSemanticOnce(model, profile, 'labels-only', async (ir) => {
       requests++

@@ -51,7 +51,10 @@ export function safeSemanticDecision(field: FormFieldIR, ir: FormPageIR): { item
   }
   const selectedFacts = profilePaths.map((path) => facts.get(path)).filter((fact): fact is AgentFactRef => !!fact)
   const fixed = ['native-select', 'custom-select', 'radio-group'].includes(field.controlKind)
-  if (fixed && selectedFacts.some((fact) => fact.valueType !== 'enum' || fact.sensitivity === 'restricted')) {
+  if (field.capabilities.includes('select-option') && selectedFacts.some((fact) => fact.sensitivity === 'restricted')) {
+    return manual('受限事实禁止进入选择控件')
+  }
+  if (fixed && selectedFacts.some((fact) => fact.valueType !== 'enum')) {
     return manual('规则候选与固定下拉的事实类型不兼容')
   }
   return {
