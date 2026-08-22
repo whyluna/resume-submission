@@ -56,6 +56,16 @@ function candidatesForField(
   for (const route of routes) {
     const semanticSection = route.section
     const currentSignal = norm([field.signals.label, ...field.signals.labelNear, field.signals.ariaLabel, field.signals.title].join(' '))
+    const selectLike = ['native-select', 'custom-select', 'combobox', 'radio-group'].includes(field.control.kind)
+    if (semanticSection === 'basic' && field.compoundSize === 2 && /证件.*(?:号码|号)/.test(currentSignal)) {
+      candidates.push({
+        fieldId: field.id,
+        profilePath: selectLike ? 'basic.idType' : 'basic.idNumber',
+        score: 0.99,
+        transform: selectLike ? 'enum-normalize' : 'identity',
+        reason: selectLike ? '证件复合行的类型选择控件' : '证件复合行的号码输入控件',
+      })
+    }
     if (field.control.kind === 'checkbox' && /至今|在读|在职|进行中/.test(currentSignal)
       && ['educations', 'experiences', 'projects', 'studentWork'].includes(semanticSection)) {
       candidates.push({
@@ -68,6 +78,8 @@ function candidatesForField(
     }
     const aliases = ALIASES[semanticSection] ?? {}
     for (const [fieldKey, list] of Object.entries(aliases)) {
+      if (selectLike && semanticSection === 'basic' && fieldKey === 'idNumber') continue
+      if (!selectLike && semanticSection === 'basic' && field.compoundSize === 2 && /证件/.test(currentSignal) && fieldKey === 'idType') continue
       let best = { score: 0, reason: '' }
       for (const alias of list) {
         const scored = aliasScore(alias, field, true)

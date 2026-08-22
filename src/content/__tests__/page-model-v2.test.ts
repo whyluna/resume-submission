@@ -5,6 +5,9 @@ import { sanitizeCaptureUrl, sanitizePageModel } from '../capture/sanitize'
 import { discoverPageModel } from '../discover/pageModel'
 import { prepareRepeatEntries } from '../adapters/repeatEntries'
 import { createEmptyProfile } from '@/shared/storage'
+import { generateRuleCandidateIndex } from '../planner/ruleCandidates'
+import { executeControl } from '../executorV2/controls'
+import { projectDateRange } from '../planner/projection'
 
 const FIXTURE_DIR = path.join(process.cwd(), 'e2e', 'fixtures')
 
@@ -115,6 +118,44 @@ describe('PageModel V2 discovery', () => {
     const education = model.sections.find((section) => section.semanticCandidates.includes('educations'))
     expect(education).toBeDefined()
     expect(education?.entries[0].fields).toHaveLength(1)
+  })
+
+  it('models same-label document type and number controls as a compound row', () => {
+    document.body.innerHTML = `<section><h2>个人信息</h2>
+      <div class="semantic-row"><span class="semantic-label">证件号码</span>
+        <select><option value="">请选择</option><option>身份证</option><option>护照</option></select>
+        <input type="text">
+      </div>
+    </section>`
+    const model = discoverPageModel(document, 'https://example.com/resume')
+    const fields = model.sections[0].fields
+    expect(fields).toHaveLength(2)
+    expect(fields.map((field) => field.compoundIndex)).toEqual([0, 1])
+    expect(fields[0].compoundGroupId).toBe(fields[1].compoundGroupId)
+    const candidates = generateRuleCandidateIndex(model, createEmptyProfile('测试档案'))
+    expect(candidates[fields[0].id][0].profilePath).toBe('basic.idType')
+    expect(candidates[fields[1].id][0].profilePath).toBe('basic.idNumber')
+  })
+
+  it('groups and executes opaque four-part selects as one semantic date range', async () => {
+    const options = (values: string[]) => `<select><option value="">请选择</option>${values.map((value) => `<option>${value}</option>`).join('')}</select>`
+    document.body.innerHTML = `<section><h2>教育背景</h2>
+      <div class="semantic-row"><span class="semantic-label">就读时间</span>
+        ${options(['2021', '2022'])}${options(['08', '09'])}${options(['2025', '2026'])}${options(['05', '06'])}
+      </div>
+    </section>`
+    const model = discoverPageModel(document, 'https://unknown.example/resume')
+    const fields = model.sections[0].entries[0].fields
+    expect(fields).toHaveLength(1)
+    expect(fields[0].control.kind).toBe('date-range-parts')
+    expect(fields[0].control.parts.map((part) => part.role)).toEqual(['start-year', 'start-month', 'end-year', 'end-month'])
+    expect(fields[0].control.parts.every((part) => part.controlKind === 'native-select')).toBe(true)
+    const executed = await executeControl({
+      field: fields[0],
+      value: projectDateRange({ startDate: '2022-09', endDate: '2026-06', endDateIsNow: false }),
+    }, document)
+    expect(executed.verified).toBe(true)
+    expect(Array.from(document.querySelectorAll('select')).map((select) => select.value)).toEqual(['2022', '09', '2026', '06'])
   })
 })
 

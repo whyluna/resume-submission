@@ -59,6 +59,7 @@ export type ControlPartRole =
 export interface ControlPart {
   role: ControlPartRole
   ref: ElementRefV2
+  controlKind?: ControlGroupKind
 }
 
 export interface ControlGroup {
@@ -89,6 +90,9 @@ export interface PageField {
   id: string
   signals: SemanticSignalsV2
   control: ControlGroup
+  compoundGroupId?: string
+  compoundIndex?: number
+  compoundSize?: number
 }
 
 export interface PageEntry {

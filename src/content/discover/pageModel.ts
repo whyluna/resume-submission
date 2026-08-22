@@ -10,6 +10,7 @@ import { dayeeWtAdapter } from '../adapters/dayeeWt'
 import { kumaAdapter } from '../adapters/kuma'
 
 const CONTROL_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
+const FORM_ROW_SELECTOR = '.form-item, .semantic-row, [class*="formItem"], [class*="form-item"], [class*="field-row"], [class*="form-row"], [role="group"]'
 const NAV_SELECTOR = 'nav, aside, [role="navigation"], [role="menu"], [role="tablist"], [class*="sidebar"], [class*="side-nav"], [class*="step"]'
 const SECTION_TITLE_SELECTOR = [
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'legend', '[role="heading"]',
@@ -137,8 +138,8 @@ interface DetectedControl {
   signalElement: Element
 }
 
-function part(role: ControlPartRole, el: Element): ControlPart {
-  return { role, ref: makeRef(el) }
+function part(role: ControlPartRole, el: Element, controlKind?: ControlGroupKind): ControlPart {
+  return { role, ref: makeRef(el), ...(controlKind ? { controlKind } : {}) }
 }
 
 function stateOf(controls: Element[]): ControlGroup['currentState'] {
@@ -365,9 +366,96 @@ function detectControl(el: Element, adapterId: AdapterId): DetectedControl | nul
   return null
 }
 
+interface FieldRecord {
+  field: PageField
+  row: Element | null
+  identity: Element
+  signalElement: Element
+}
+
+function datePartToken(record: FieldRecord): string {
+  const input = record.signalElement as HTMLInputElement
+  return norm([
+    input.placeholder,
+    input.getAttribute('aria-label'),
+    input.getAttribute('title'),
+    record.field.signals.label,
+    ...record.field.control.options.slice(0, 8),
+  ].filter(Boolean).join(' '))
+}
+
+function combineGenericDateRows(records: FieldRecord[], sectionTitle: string): FieldRecord[] {
+  const byRow = new Map<Element, FieldRecord[]>()
+  for (const record of records) {
+    if (!record.row) continue
+    const list = byRow.get(record.row) ?? []
+    list.push(record)
+    byRow.set(record.row, list)
+  }
+  const consumed = new Set<FieldRecord>()
+  const combined: FieldRecord[] = []
+  for (const [row, rowRecords] of byRow) {
+    const signal = norm(rowRecords.flatMap((record) => [record.field.signals.label, ...record.field.signals.labelNear]).join(' '))
+    if (!/日期|时间|年月|出生|入学|毕业|起止|获奖|任职/.test(signal)) continue
+    const toggle = rowRecords.find((record) => record.field.control.kind === 'checkbox'
+      && /至今|在读|在职|进行中/.test(datePartToken(record)))
+    const dateRecords = rowRecords.filter((record) => record !== toggle)
+    if (![2, 4, 6].includes(dateRecords.length)) continue
+    const supported = dateRecords.every((record) => ['native-select', 'custom-select', 'combobox', 'date-single', 'text'].includes(record.field.control.kind))
+    if (!supported) continue
+    const tokens = dateRecords.map(datePartToken)
+    const twoPartSingle = dateRecords.length === 2
+      && (/年|yyyy/.test(tokens[0]) || /月|mm/.test(tokens[1]))
+      && /月|mm/.test(tokens[1])
+    const twoPartRange = dateRecords.length === 2 && !twoPartSingle
+      && (/起止|就读|工作|实习|项目|任职|教育/.test(signal)
+        || dateRecords.every((record) => record.field.control.kind === 'date-single'))
+    const kind: ControlGroupKind = dateRecords.length >= 4 ? 'date-range-parts' : twoPartRange ? 'date-range' : 'date-parts'
+    const roles: ControlPartRole[] = dateRecords.length === 6
+      ? ['start-year', 'start-month', 'start-day', 'end-year', 'end-month', 'end-day']
+      : dateRecords.length === 4
+        ? ['start-year', 'start-month', 'end-year', 'end-month']
+        : twoPartRange ? ['start', 'end'] : ['year', 'month']
+    const controls = [...dateRecords.map((record) => record.signalElement), ...(toggle ? [toggle.signalElement] : [])]
+    const parts = dateRecords.map((record, index) => part(roles[index], record.identity, record.field.control.kind))
+    if (toggle) parts.push(part('current-toggle', toggle.identity, toggle.field.control.kind))
+    const first = dateRecords[0]
+    const control = makeGroup(kind, row, controls, parts, 'generic-semantic-date-group')
+    const idSource = [sectionTitle, first.field.signals.label, kind, control.id].join('|')
+    combined.push({
+      field: { id: `field_${hashSig(idSource)}`, signals: first.field.signals, control },
+      row,
+      identity: row,
+      signalElement: first.signalElement,
+    })
+    dateRecords.forEach((record) => consumed.add(record))
+    if (toggle) consumed.add(toggle)
+  }
+  return [...records.filter((record) => !consumed.has(record)), ...combined]
+}
+
+function assignCompoundGroups(records: FieldRecord[]): void {
+  const byRow = new Map<Element, FieldRecord[]>()
+  for (const record of records) {
+    if (!record.row) continue
+    const list = byRow.get(record.row) ?? []
+    list.push(record)
+    byRow.set(record.row, list)
+  }
+  for (const [row, group] of byRow) {
+    if (group.length < 2) continue
+    const groupId = `compound_${makeRef(row).signature}`
+    group.forEach((record, index) => {
+      record.field.compoundGroupId = groupId
+      record.field.compoundIndex = index
+      record.field.compoundSize = group.length
+    })
+  }
+}
+
 function discoverFields(root: Element, sectionTitle: string, adapterId: AdapterId): PageField[] {
   const seen = new Set<Element>()
-  const fields: PageField[] = []
+  const records: FieldRecord[] = []
   for (const el of Array.from(root.querySelectorAll(CONTROL_SELECTOR))) {
     if (!isVisible(el)) continue
     const detected = detectControl(el, adapterId)
@@ -375,9 +463,16 @@ function discoverFields(root: Element, sectionTitle: string, adapterId: AdapterI
     seen.add(detected.identity)
     const signals = signalsFor(detected.signalElement, sectionTitle)
     const idSource = [sectionTitle, signals.label, signals.placeholder, detected.group.id].join('|')
-    fields.push({ id: `field_${hashSig(idSource)}`, signals, control: detected.group })
+    records.push({
+      field: { id: `field_${hashSig(idSource)}`, signals, control: detected.group },
+      row: detected.signalElement.closest(FORM_ROW_SELECTOR),
+      identity: detected.identity,
+      signalElement: detected.signalElement,
+    })
   }
-  return fields
+  const grouped = combineGenericDateRows(records, sectionTitle)
+  assignCompoundGroups(grouped)
+  return grouped.map((record) => record.field)
 }
 
 function entryRoots(sectionRoot: Element): Element[] {

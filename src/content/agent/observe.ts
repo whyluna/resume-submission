@@ -48,12 +48,20 @@ function fieldObservation(
     parts: field.control.parts.map((part) => ({
       partId: part.ref.signature,
       roleCandidates: [part.role],
-      controlKind: field.control.kind,
+      controlKind: part.controlKind ?? field.control.kind,
       placeholder: '',
       optionSamples: field.control.options.slice(0, 20),
     })),
     existingState: field.control.currentState,
     required: field.control.required,
+    ...(field.compoundGroupId !== undefined ? {
+      compound: {
+        groupId: field.compoundGroupId,
+        index: field.compoundIndex ?? 0,
+        size: field.compoundSize ?? 1,
+        siblingFieldIds: [],
+      },
+    } : {}),
     ruleHints: (candidates[field.id] ?? []).flatMap((candidate) => {
       const factId = factIdByPath.get(candidate.profilePath)
       return factId ? [{
@@ -91,6 +99,16 @@ export function buildAgentObservation(
     ...section.entries.flatMap((entry) => entry.fields.map((field) =>
       fieldObservation(section, field, factIdByPath, candidates, entry.id, entry.index))),
   ])
+  const compoundGroups = new Map<string, string[]>()
+  for (const field of fields) {
+    if (!field.compound) continue
+    const ids = compoundGroups.get(field.compound.groupId) ?? []
+    ids.push(field.fieldId)
+    compoundGroups.set(field.compound.groupId, ids)
+  }
+  for (const field of fields) {
+    if (field.compound) field.compound.siblingFieldIds = (compoundGroups.get(field.compound.groupId) ?? []).filter((id) => id !== field.fieldId)
+  }
   return {
     pageId: `page_${hashSig(`${model.adapterId}|${model.url}|${model.title}`)}`,
     adapterId: model.adapterId,

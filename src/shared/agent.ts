@@ -34,6 +34,7 @@ export interface AgentFieldObservation {
   parts: AgentControlPartObservation[]
   existingState: 'empty' | 'non-empty' | 'locked' | 'unknown'
   required: boolean
+  compound?: { groupId: string; index: number; size: number; siblingFieldIds: string[] }
   ruleHints: Array<{ factId: string; path: string; confidence: number; transform: TransformId; reason: string }>
 }
 

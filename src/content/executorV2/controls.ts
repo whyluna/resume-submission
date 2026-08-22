@@ -131,7 +131,8 @@ export async function inspectControlOptions(
   }
 
   const trigger = partElement(group, 'trigger', doc) ?? root
-  const input = partElement(group, 'input', doc) ?? root.querySelector('input')
+  const inputPart = partElement(group, 'input', doc)
+  const input = inputPart instanceof HTMLInputElement ? inputPart : inputPart?.querySelector('input') ?? root.querySelector('input')
   const previous = input instanceof HTMLInputElement ? input.value : ''
   ;(trigger as HTMLElement).click()
   if (query && input instanceof HTMLInputElement) setNativeValue(input, query)
@@ -149,7 +150,8 @@ async function chooseCustom(fieldId: string, group: ControlGroup, value: string,
   const root = resolveElement(group.root, doc)
   if (!root) return result(fieldId, { failureClass: 'stale-ref', message: '自定义下拉引用已失效' })
   const trigger = partElement(group, 'trigger', doc) ?? root
-  const input = partElement(group, 'input', doc) ?? root.querySelector('input')
+  const inputPart = partElement(group, 'input', doc)
+  const input = inputPart instanceof HTMLInputElement ? inputPart : inputPart?.querySelector('input') ?? root.querySelector('input')
   ;(trigger as HTMLElement).click()
   if (input instanceof HTMLInputElement) {
     setNativeValue(input, value)
@@ -192,11 +194,25 @@ function chooseRadio(group: ControlGroup, value: string, doc: Document): boolean
   return target.checked
 }
 
-function writeDatePart(part: ControlPart, value: string, doc: Document): boolean {
+async function writeDatePart(part: ControlPart, value: string, doc: Document): Promise<boolean> {
   const el = resolveElement(part.ref, doc)
   if (!el) return false
   if (part.role === 'current-toggle') return writeCheckbox(el, value === '是')
   if (el instanceof HTMLSelectElement) return chooseNativeSelect(el, value)
+  if (part.controlKind && ['custom-select', 'combobox', 'cascader'].includes(part.controlKind)) {
+    const input = el instanceof HTMLInputElement ? el : el.querySelector('input')
+    const group: ControlGroup = {
+      id: `date-part-${part.ref.signature}`,
+      kind: part.controlKind,
+      root: part.ref,
+      parts: [
+        { role: 'trigger', ref: part.ref },
+        ...(input ? [{ role: 'input' as const, ref: part.ref }] : []),
+      ],
+      options: [], required: false, disabled: false, readOnly: false, currentState: 'unknown', commitStrategy: 'date-part-select',
+    }
+    return (await chooseCustom(group.id, group, value, doc)).verified
+  }
   const written = writeText(el, value)
   return written.written && written.actual === value
 }
@@ -207,6 +223,9 @@ function readDatePart(part: ControlPart, expected: string, doc: Document): boole
   if (part.role === 'current-toggle') return el instanceof HTMLInputElement && el.checked === (expected === '是')
   if (el instanceof HTMLSelectElement) return valueMatches(el.value, expected) || valueMatches(el.selectedOptions[0]?.textContent ?? '', expected)
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value === expected
+  if (part.controlKind && ['custom-select', 'combobox', 'cascader'].includes(part.controlKind)) {
+    return valueMatches(selectedText(el), expected) || valueMatches((el.querySelector('input') as HTMLInputElement | null)?.value ?? '', expected)
+  }
   return false
 }
 
@@ -216,7 +235,10 @@ async function executeDateParts(request: ControlExecutionRequest, doc: Document)
   const group = request.field.control
   const expectedParts = group.parts.filter((part) => part.role in projected.parts)
   if (expectedParts.length === 0) return result(request.field.id, { failureClass: 'control', message: '页面日期控件没有可写部分' })
-  const written = expectedParts.every((part) => writeDatePart(part, projected.parts[part.role], doc))
+  let written = true
+  for (const part of expectedParts) {
+    if (!(await writeDatePart(part, projected.parts[part.role], doc))) { written = false; break }
+  }
   if (!written) return result(request.field.id, { written: true, failureClass: 'control', message: '日期至少一个部分写入失败' })
   await new Promise((resolve) => setTimeout(resolve, 0))
   const verified = expectedParts.every((part) => readDatePart(part, projected.parts[part.role], doc))
@@ -240,8 +262,11 @@ async function executeDateRange(request: ControlExecutionRequest, value: string,
   if (parts.length < 2) return result(request.field.id, { failureClass: 'control', message: '日期区间缺少起止控件' })
   const dateParts = parts.filter((part) => part.role !== 'current-toggle')
   const toggle = parts.find((part) => part.role === 'current-toggle')
-  const writtenDates = dateParts.every((part) => writeDatePart(part, expected[part.role] ?? '', doc))
-  const writtenToggle = !toggle || writeDatePart(toggle, expected['current-toggle'] ?? '否', doc)
+  let writtenDates = true
+  for (const part of dateParts) {
+    if (!(await writeDatePart(part, expected[part.role] ?? '', doc))) { writtenDates = false; break }
+  }
+  const writtenToggle = !toggle || await writeDatePart(toggle, expected['current-toggle'] ?? '否', doc)
   const written = writtenDates && writtenToggle
   const verifiedDates = dateParts.every((part) => {
     if (range.current && part.role === 'end') {
