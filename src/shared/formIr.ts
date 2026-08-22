@@ -1,5 +1,6 @@
-import type { AgentCapability, AgentFactRef, AgentFieldObservation, AgentToolName } from './agent'
+import type { AgentFactRef, AgentFieldObservation } from './agent'
 import type { ControlGroupKind, ControlPartRole } from './pageModel'
+import type { TransformId } from './semanticPlan'
 import type { SectionKey } from './types'
 
 export type FormPartFormat = 'text' | 'YYYY' | 'MM' | 'DD' | 'YYYY-MM' | 'YYYY-MM-DD' | 'boolean'
@@ -43,7 +44,7 @@ export interface FormFieldIR extends Omit<AgentFieldObservation, 'parts'> {
   parts: FormComponentPartIR[]
   /** Locally synthesized, allow-listed HTML-like structure. Never raw outerHTML. */
   componentHtml: string
-  allowedTools: AgentToolName[]
+  allowedTransforms: TransformId[]
   entryRoute?: EntryRouteIR
   constraints: {
     dateShape: 'none' | 'single' | 'range' | 'parts' | 'range-parts'
@@ -73,23 +74,4 @@ export interface FormPageIR {
   fields: FormFieldIR[]
   facts: AgentFactRef[]
   forbiddenActions: Array<'save' | 'next' | 'submit' | 'delete'>
-}
-
-export const ACTION_AGENT_TOOLS = [
-  'fill_text_from_fact',
-  'select_option_from_fact',
-  'fill_date_from_facts',
-  'set_boolean_from_fact',
-  'mark_manual',
-  'mark_skip',
-] as const satisfies readonly AgentToolName[]
-
-export function actionToolsForCapabilities(capabilities: AgentCapability[]): AgentToolName[] {
-  const tools: AgentToolName[] = []
-  if (capabilities.includes('write-text')) tools.push('fill_text_from_fact')
-  if (capabilities.includes('select-option')) tools.push('select_option_from_fact')
-  if (capabilities.includes('fill-date')) tools.push('fill_date_from_facts')
-  if (capabilities.includes('toggle')) tools.push('set_boolean_from_fact')
-  tools.push('mark_manual', 'mark_skip')
-  return tools
 }

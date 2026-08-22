@@ -1,11 +1,11 @@
-import type { AgentRoundResponse, ExtMessage, GetStateRes, LlmTestRes, OneShotPlannerResponse, SemanticPlannerResponse } from '@/shared/types'
+import type { AgentRoundResponse, ExtMessage, GetStateRes, LlmTestRes, OneShotSemanticResponse, SemanticPlannerResponse } from '@/shared/types'
 import { detectSite } from '@/shared/siteDetect'
 import { getActiveProfile, getSettings } from '@/shared/storage'
 import { extractProfile, matchFields } from './llm'
 import { planPageSemantics } from './llmPlanner'
 import { planAgentRound } from './agentPlanner'
 import { projectProfileForPage } from '@/shared/profileProjection'
-import { planOneShot } from './oneShotPlanner'
+import { reviewPageOneShot } from './oneShotSemanticPlanner'
 
 // 快捷键 Alt+Shift+F：向当前页 content script 下发填写指令
 chrome.commands.onCommand.addListener(async (command) => {
@@ -49,11 +49,11 @@ chrome.runtime.onMessage.addListener((msg: ExtMessage, _sender, sendResponse) =>
     } satisfies AgentRoundResponse))
     return true
   }
-  if (msg.type === 'LLM_PLAN_ONESHOT') {
-    getSettings().then((settings) => planOneShot(msg.ir, settings)).then(sendResponse).catch((error) => sendResponse({
-      ok: false, mode: 'rule-fallback', calls: [], modelRequestCount: 0, complete: false,
-      rejected: [], messages: [], latencyMs: 0, error: `单次规划后台异常：${(error as Error).message}`,
-    } satisfies OneShotPlannerResponse))
+  if (msg.type === 'LLM_REVIEW_ONESHOT') {
+    getSettings().then((settings) => reviewPageOneShot(msg.ir, settings)).then(sendResponse).catch((error) => sendResponse({
+      ok: false, plan: [], modelRequestCount: 0, modelDecisions: 0, ruleDecisions: 0, manualDecisions: 0,
+      rejected: [], messages: [], latencyMs: 0, sources: {}, error: `单次语义复审后台异常：${(error as Error).message}`,
+    } satisfies OneShotSemanticResponse))
     return true
   }
   return false

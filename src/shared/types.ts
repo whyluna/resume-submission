@@ -401,7 +401,7 @@ export type ExtMessage =
   | { type: 'LLM_MATCH'; fields: LlmMatchFieldIn[]; profileLines: string[] } // content → bg：字段映射兜底
   | { type: 'LLM_PLAN_PAGE'; model: PageModel } // content → bg：V2 全分区语义规划
   | { type: 'LLM_AGENT_ROUND'; model: PageModel; round: number; targetFieldIds: string[]; previousResults: AgentToolResult[]; previousIssues: string[] }
-  | { type: 'LLM_PLAN_ONESHOT'; ir: FormPageIR }
+  | { type: 'LLM_REVIEW_ONESHOT'; ir: FormPageIR }
   | { type: 'CONTENT_SCAN' } // popup → content：仅扫描
   | { type: 'CONTENT_FILL' } // popup → content：扫描+匹配+填写
   | { type: 'CONTENT_FILL_V2' } // 调试/灰度：V2 PageModel → planner → verified executor
@@ -451,14 +451,16 @@ export interface AgentRoundResponse {
   error?: string
 }
 
-export interface OneShotPlannerResponse {
+export interface OneShotSemanticResponse {
   ok: boolean
-  mode: 'llm' | 'rule-fallback'
-  calls: AgentToolCall[]
+  plan: SemanticPlanItem[]
   modelRequestCount: 0 | 1
-  complete: boolean
+  modelDecisions: number
+  ruleDecisions: number
+  manualDecisions: number
   rejected: string[]
   messages: string[]
   latencyMs: number
+  sources: Record<string, 'llm-review' | 'rule-candidate' | 'local-safety'>
   error?: string
 }

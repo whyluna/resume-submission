@@ -1,5 +1,4 @@
 import type { FormComponentPartIR, FormFieldIR, FormPageIR, FormPartFormat } from '@/shared/formIr'
-import { actionToolsForCapabilities } from '@/shared/formIr'
 import type { ControlGroupKind, ControlPartRole, PageField, PageModel } from '@/shared/pageModel'
 import type { PrivacyMode, Profile } from '@/shared/types'
 import { redactCaptureText, sanitizeCaptureUrl } from '../capture/sanitize'
@@ -85,6 +84,19 @@ function evidence(kind: ControlGroupKind): FormFieldIR['constraints']['successEv
   return 'value'
 }
 
+function allowedTransforms(kind: ControlGroupKind): FormFieldIR['allowedTransforms'] {
+  if (kind === 'date-range-parts') return ['split-date-parts']
+  if (kind === 'date-parts') return ['split-date-single']
+  if (kind === 'date-range') return ['date-range']
+  if (kind === 'date-single') return ['identity']
+  if (kind === 'checkbox') return ['derive-boolean', 'enum-normalize']
+  if (['native-select', 'custom-select', 'combobox', 'cascader', 'radio-group'].includes(kind)) {
+    return ['enum-normalize', 'identity', 'join-list', 'derive-boolean']
+  }
+  if (['text', 'textarea', 'richtext'].includes(kind)) return ['identity', 'join-list', 'aggregate-text']
+  return []
+}
+
 function componentHtml(field: FormFieldIR): string {
   const label = escapeHtml(field.labels[0] ?? '')
   const parts = field.parts.map((part) => {
@@ -129,7 +141,7 @@ export function buildFormPageIR(
       labels: observed.labels.map((label) => safeText(label, 100)).filter(Boolean),
       parts,
       componentHtml: '',
-      allowedTools: actionToolsForCapabilities(observed.capabilities),
+      allowedTransforms: allowedTransforms(observed.controlKind),
       ...(observed.entryId && routeByEntryId.has(observed.entryId) ? { entryRoute: routeByEntryId.get(observed.entryId) } : {}),
       constraints: {
         dateShape: dateShape(observed.controlKind),
